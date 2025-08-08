@@ -1,0 +1,25 @@
+services:
+  expo-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env   
+    # Bind + Volume
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    ports:
+      - "8081:8081"
+    stdin_open: true  
+    tty: true    
+    environment:
+      # Metro がバインドするホスト名
+      - REACT_NATIVE_PACKAGER_HOSTNAME=${HOST_IP_ADDRESS}
+volumes:
+  project:
+    driver: local
+
+# for initialization
+#   npx create-expo-app
+#   npx expo start
