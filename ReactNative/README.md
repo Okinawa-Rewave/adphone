@@ -24,42 +24,37 @@ WSL（Linuxターミナル）を開きます。
 
 ```bash
 cd ReactNative
+```
 2.4 .env ファイルを作成
 ./ReactNative 内に .env ファイルを作成し、自分のIPv4アドレスを記入します。
-
-env
-Copy
-Edit
+```bash:.env
 HOST_IP_ADDRESS=xxx.xxx.x.x
+```
 3. コンテナの起動
-3.1 コンテナをビルド＆起動
-bash
-Copy
-Edit
+コンテナをビルド＆起動
+```bash
 docker-compose up --build
+```
 3.2 コンテナに入る
-bash
-Copy
-Edit
+以降コンテナ内で操作する
+```bash
 docker-compose exec expo-app sh
+```
 4. Expoアプリの作成
 4.1 新しいExpoアプリを作成
-bash
-Copy
-Edit
+```bash
 npx create-expo-app
+```
 What is your app named? と聞かれたら、my-app など任意の名前を入力します。
 
 4.2 作成したアプリに移動
-bash
-Copy
-Edit
+```bash
 cd my-app
+```
 5. Expoサーバの起動
-bash
-Copy
-Edit
+```bash
 npx expo start
+```
 ターミナルに QRコード が表示されます。
 
 6. スマホで動作確認
@@ -72,13 +67,11 @@ npx expo start
 
 7. 接続不具合の修正（@expo/ngrok 利用）
 7.1 @expo/ngrok をインストール
-bash
-Copy
-Edit
+```bash
 yarn add @expo/ngrok
+```
 7.2 トンネルモードでExpoを起動
-bash
-Copy
-Edit
+```bash
 npx expo start --tunnel
+```
 これでスマホからアクセスできるようになります 🎉
