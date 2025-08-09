@@ -1,28 +1,84 @@
-このプロジェクトはReact Native + Dockerで動作します
-Docker Desktop を起動する
-WSLを開く
-ymlファイルがあるディレクトリReactNativeに移動する
-./ReactNativeに.envファイルを作成し自分のipv4アドレスを書く
+# React Native + Docker 環境構築手順
+
+このプロジェクトは **React Native + Docker** で動作します。  
+以下の手順に従って開発環境をセットアップしてください。
+
+---
+
+## 1. 前提条件
+- Docker Desktop がインストールされていること
+- WSL が利用可能であること（Windowsの場合）
+
+---
+
+## 2. 環境構築手順
+
+### 2.1 Docker Desktop を起動
+まず **Docker Desktop** を起動します。
+
+### 2.2 WSLを開く
+WSL（Linuxターミナル）を開きます。
+
+### 2.3 プロジェクトディレクトリへ移動
+`docker-compose.yml` があるディレクトリへ移動します。
+
+```bash
+cd ReactNative
+2.4 .env ファイルを作成
+./ReactNative 内に .env ファイルを作成し、自分のIPv4アドレスを記入します。
+
+env
+Copy
+Edit
 HOST_IP_ADDRESS=xxx.xxx.x.x
+3. コンテナの起動
+3.1 コンテナをビルド＆起動
+bash
+Copy
+Edit
+docker-compose up --build
+3.2 コンテナに入る
+bash
+Copy
+Edit
+docker-compose exec expo-app sh
+4. Expoアプリの作成
+4.1 新しいExpoアプリを作成
+bash
+Copy
+Edit
+npx create-expo-app
+What is your app named? と聞かれたら、my-app など任意の名前を入力します。
 
-ターミナルでコンテナを起動する
-1．docker-compose up --build
+4.2 作成したアプリに移動
+bash
+Copy
+Edit
+cd my-app
+5. Expoサーバの起動
+bash
+Copy
+Edit
+npx expo start
+ターミナルに QRコード が表示されます。
 
-コンテナに入る
-2．docker-compose exec expo-app sh
+6. スマホで動作確認
+スマホに Expo Go アプリをインストール
 
-expo appを作る
-3．npx create-expo-app
-What is your app named? … と聞かれるのでmy-appなどにしておく
-4．cd my-app
+カメラでQRコードを読み取る
 
-expoサーバ起動したら開発できるようになる
-5．npx expo start
-QRコードが生成される
+⚠️ ただし、初期状態では接続できない場合があります。
+その場合は以下の手順で修正してください。
 
-【スマホで動作確認できるようになった】
-expo go アプリをスマホにインストールしてカメラでqrコードを読み取るとスマホ上で動作確認できるはず
-だったけどできなかったので下記で修正
-@expo/ngrokをインストールする
-6．yarn add @expo/ngrok
-7．npx expo start --tunnel
+7. 接続不具合の修正（@expo/ngrok 利用）
+7.1 @expo/ngrok をインストール
+bash
+Copy
+Edit
+yarn add @expo/ngrok
+7.2 トンネルモードでExpoを起動
+bash
+Copy
+Edit
+npx expo start --tunnel
+これでスマホからアクセスできるようになります 🎉
