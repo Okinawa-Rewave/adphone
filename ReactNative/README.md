@@ -72,12 +72,17 @@ npx expo start --tunnel
 これでスマホからアクセスできるようになります 
 
 8. (追記)React Native（Expo 含む）の Fast Refresh が効かない問題が解決できました。
+
 8.1 原因
+
 ・Windows 側（/mnt/c/...）に置いている場合の問題
+
 WSL は Windows のファイルシステム（NTFS）を /mnt/c/ にマウントしてアクセスしています。
 このマウントは inotify（Linuxのリアルタイムファイル監視機構）を正しくサポートしていません。
 そのため、ファイルの保存があっても WSL 内のプロセス（例: Metro Bundler, Webpack, chokidar）が「変更通知」を受け取れない、または遅延することがあります。
+
 ・inux 側（/home/ユーザー名/...）に置くメリット
+
 WSL の Linux ファイルシステム（ext4）は inotify を完全にサポートしており、保存した瞬間に変更イベントが発火します。
 Metro Bundler や chokidar が即時に更新を検知 → Fast Refresh やホットリロードが安定して動く。
 ファイルアクセスも /mnt/c より高速（Docker ビルドや依存関係インストールが早くなる）。
