@@ -103,17 +103,21 @@ cp -a /mnt/c/Users/ic221210/ReactNarive/* ~/ReactNative/
 VS Code で開く方法（重要）
 Windows の VS Code で直接 /home/... を開くとまた NTFS を経由して遅くなる可能性があります。
 代わりに VS Code Remote - WSL 拡張を使う。
+
 VS Code で拡張機能「Remote - WSL」をインストール。
+
 Ctrl+Shift+P → Remote-WSL: Open Folder in WSL。
 /home/ic221210/ReactNative を選択して開く。
 
 Docker を使っている場合の注意
+
 docker-compose.yml の volumes: も Linux 側のパスに合わせて変更する。
 ```bash
 volumes:
   - /home/ic221210/ReactNarive:/app
 ```
-以上の状態でコンテナを起動後、コンテナに入ってExpoアプリを作ると直りました
+以上の状態でコンテナを起動後、コンテナに入ってExpoアプリを作ると直りました。
+
 index.tsx を編集して保存 → 即時反映されれば成功です！
 
 8.3 編集権限がない場合
