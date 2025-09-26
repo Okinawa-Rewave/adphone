@@ -4,12 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile
     env_file:
-      - .env   
+      - .env
     # Bind + Volume
     volumes:
     # 以下のパスは例
-      - /home/ic221210/ReactNative/:/app
-      - /app/node_modules
+      - /root/ic221210/ReactNative/:/app
     ports:
       - "8081:8081"
     stdin_open: true  

@@ -7,7 +7,7 @@ RUN apk update && apk add git
 WORKDIR /app
 
 COPY package*.json ./
-# 参考サイトのnpm install -g expo-cli のままだと -g が非推奨とのことでした。システム全体にインストールするという意味
+
 RUN npm install expo-cli
 
 # ソースコードをコンテナにコピー

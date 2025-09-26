@@ -39,6 +39,8 @@ docker-compose up --build
 3.2 コンテナに入る
 
 以降コンテナ内で操作します。
+
+別のターミナルを開いてビルドしたコンテナに入ります。
 ```bash
 docker-compose exec expo-app sh
 ```
@@ -85,7 +87,7 @@ WSL は Windows のファイルシステム（NTFS）を /mnt/c/ にマウント
 このマウントは inotify（Linuxのリアルタイムファイル監視機構）を正しくサポートしていません。
 そのため、ファイルの保存があっても WSL 内のプロセス（例: Metro Bundler, Webpack, chokidar）が「変更通知」を受け取れない、または遅延することがあります。
 
-・inux 側（/home/ユーザー名/...）に置くメリット
+・linux 側（/home/ユーザー名/...）に置くメリット
 
 WSL の Linux ファイルシステム（ext4）は inotify を完全にサポートしており、保存した瞬間に変更イベントが発火します。
 Metro Bundler や chokidar が即時に更新を検知 → Fast Refresh やホットリロードが安定して動く。
@@ -98,7 +100,7 @@ mkdir -p ~/ReactNative
 ```
 プロジェクトをコピー
 ```bash
-cp -a /mnt/c/Users/ic221210/ReactNarive/* ~/ReactNative/
+cp -a /mnt/c/Users/ic221210/ReactNative/* ~/ReactNative/
 ```
 VS Code で開く方法（重要）
 Windows の VS Code で直接 /home/... を開くとまた NTFS を経由して遅くなる可能性があります。
@@ -114,7 +116,7 @@ Docker を使っている場合の注意
 docker-compose.yml の volumes: も Linux 側のパスに合わせて変更する。
 ```bash
 volumes:
-  - /home/ic221210/ReactNarive:/app
+  - /root/ic221210/ReactNative:/app
 ```
 以上の状態でコンテナを起動後、コンテナに入ってExpoアプリを作ると直りました。
 
