@@ -8,7 +8,7 @@ services:
     # Bind + Volume
     volumes:
     # 以下のパスは例
-      - /root/ic221210/ReactNative/:/app
+      - /home/ic221210/ReactNative/:/app
     ports:
       - "8081:8081"
     stdin_open: true  
