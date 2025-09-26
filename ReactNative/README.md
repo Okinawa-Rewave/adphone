@@ -94,11 +94,13 @@ Metro Bundler や chokidar が即時に更新を検知 → Fast Refresh やホ�
 ファイルアクセスも /mnt/c より高速（Docker ビルドや依存関係インストールが早くなる）。
 
 8.2 手順
+
 移動先を作成
 ```bash
 mkdir -p ~/ReactNative
 ```
 プロジェクトをコピー
+※パスは各自で修正
 ```bash
 cp -a /mnt/c/Users/ic221210/ReactNative/* ~/ReactNative/
 ```
@@ -116,7 +118,7 @@ Docker を使っている場合の注意
 docker-compose.yml の volumes: も Linux 側のパスに合わせて変更する。
 ```bash
 volumes:
-  - /root/ic221210/ReactNative:/app
+  - /home/ic221210/ReactNative:/app
 ```
 以上の状態でコンテナを起動後、コンテナに入ってExpoアプリを作ると直りました。
 
