@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { Treasure } from './InteractiveMap';
+import { Treasure } from '../InteractiveMap';
 
 const INITIAL_TREASURES: Treasure[] = [
   { id: 't1', lat: 26.5266503, lon: 128.03003221, qrCodeId: 'QR_TREASURE_001', status: 'unfound', point: 100 },

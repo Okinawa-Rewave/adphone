@@ -4,7 +4,7 @@ import { connectToDevice, disconnectDevice } from '@/lib/Ble';
 import { insertMyLocation } from '@/lib/db';
 import React, { useState, useCallback } from 'react';
 import { StyleSheet, Switch, View, Button, Modal, Alert, ScrollView } from 'react-native';
-import InteractiveMap from './InteractiveMap';
+import InteractiveMap from '../InteractiveMap';
 import QrScannerModal from './QrScannerModal';
 import { useTreasures } from './TreasureContext'; // Context共有
 

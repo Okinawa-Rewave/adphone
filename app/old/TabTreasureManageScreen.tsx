@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, TextInput, Button, Alert, ScrollView, StyleSheet } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
-import { Treasure } from "./InteractiveMap"; // 型を再利用
+import { Treasure } from "../InteractiveMap"; // 型を再利用
 
 // 初期データ（index.tsxと同じ）
 const INITIAL_TREASURES: Treasure[] = [
