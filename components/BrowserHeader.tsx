@@ -7,16 +7,20 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
+import { Design } from "@/constants/Design";
 
 type BrowserHeaderProps = {
   showControls?: boolean;
+  /** 戻るを表示するか（ホームでは false） */
+  showBack?: boolean;
   onRefresh?: () => void;
   refreshing?: boolean;
-  refreshSuccessPulse?: boolean; // ★追加
+  refreshSuccessPulse?: boolean;
 };
 
 export function BrowserHeader({
   showControls = true,
+  showBack = true,
   onRefresh,
   refreshing = false,
   refreshSuccessPulse = false,
@@ -24,98 +28,106 @@ export function BrowserHeader({
   const router = useRouter();
   const pathname = usePathname();
 
-  const spinStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        {
-          rotate: refreshing
-            ? withRepeat(withTiming("360deg", { duration: 500 }), -1)
-            : "0deg",
-        },
-      ],
-    };
-  });
+  const spinStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        rotate: refreshing
+          ? withRepeat(withTiming("360deg", { duration: 500 }), -1)
+          : "0deg",
+      },
+    ],
+  }));
 
   return (
     <View style={styles.wrapper}>
       <View style={styles.bar}>
         {showControls && (
           <View style={styles.controls}>
-            {/* 戻る */}
-            <TouchableOpacity onPress={() => router.back()}>
-              <ChevronLeft size={18} color="#6b7280" />
-            </TouchableOpacity>
-
-            {/* 進む（ダミー） */}
+            {showBack ? (
+              <TouchableOpacity
+                onPress={() => router.back()}
+                style={styles.controlTouch}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <ChevronLeft size={20} color={Design.colors.textSecondary} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.controlPlaceholder} />
+            )}
             <View style={styles.disabled}>
-              <ChevronRight size={18} color="#d1d5db" />
+              <ChevronRight size={20} color={Design.colors.border} />
             </View>
-
-            {/* 更新 */}
             <TouchableOpacity
               onPress={onRefresh}
               disabled={refreshing}
-              style={{ opacity: refreshing ? 0.6 : 1 }}
+              style={[styles.controlTouch, refreshing && { opacity: 0.6 }]}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
               {refreshSuccessPulse ? (
-                <Check size={16} color="#22c55e" />
+                <Check size={18} color={Design.colors.success} />
               ) : (
                 <Animated.View style={spinStyle}>
-                  <RotateCw size={16} color="#6b7280" />
+                  <RotateCw size={18} color={Design.colors.textSecondary} />
                 </Animated.View>
               )}
             </TouchableOpacity>
-
-            {/* デバイス（ダミー） */}
             <View style={styles.disabled}>
-              <Smartphone size={14} color="#6b7280" />
+              <Smartphone size={16} color={Design.colors.border} />
             </View>
           </View>
         )}
-
         <View style={styles.addressBar}>
-          <Text style={styles.pathText}>{pathname}</Text>
+          <Text style={styles.pathText} numberOfLines={1}>
+            {pathname || "/"}
+          </Text>
         </View>
       </View>
     </View>
   );
 }
 
-
 const styles = StyleSheet.create({
   wrapper: {
-    paddingTop: 8,
-    paddingHorizontal: 8,
-    backgroundColor: "#f3f4f6",
+    paddingTop: Design.spacing.xs,
+    paddingHorizontal: Design.spacing.sm,
+    paddingBottom: Design.spacing.xs,
+    backgroundColor: Design.colors.surface,
   },
   bar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    height: 40,
+    backgroundColor: Design.colors.white,
+    borderRadius: Design.radius.md,
+    paddingHorizontal: Design.spacing.sm,
+    minHeight: 48,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: Design.colors.border,
   },
   controls: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginRight: 8,
+    gap: Design.spacing.sm,
+    marginRight: Design.spacing.sm,
+  },
+  controlTouch: {
+    padding: Design.spacing.xs,
+  },
+  controlPlaceholder: {
+    width: 20,
+    height: 20,
   },
   disabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   addressBar: {
     flex: 1,
-    backgroundColor: "#f9fafb",
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    backgroundColor: Design.colors.surface,
+    borderRadius: Design.radius.sm,
+    paddingHorizontal: Design.spacing.md,
+    paddingVertical: Design.spacing.sm,
   },
   pathText: {
-    fontSize: 13,
-    color: "#374151",
+    fontSize: Design.fontSize.body,
+    color: Design.colors.text,
   },
 });

@@ -7,12 +7,10 @@ import {
   SectionList,
   TextInput,
   TouchableOpacity,
-  ScrollView,
 } from "react-native";
 import { Link } from "expo-router";
-import { MobileFrame } from "@/components/MobileFrame";
-import { BrowserHeader } from "@/components/BrowserHeader";
-import { AppHeader } from "@/components/AppHeader";
+import { Design } from "@/constants/Design";
+import { ScreenLayout } from "@/components/ScreenLayout";
 
 type Contact = {
   id: string;
@@ -85,12 +83,8 @@ export default function ChatContactsScreen() {
   const roomIdTrimmed = roomId.trim();
 
   return (
-    <MobileFrame>
+    <ScreenLayout title="チャット" subtitle="連絡先一覧">
       <View style={styles.container}>
-        <BrowserHeader />
-        <AppHeader title="チャット" subtitle="連絡先一覧" />
-
-        {/* ✅ 追加：避難所チャット導線 */}
         <View style={styles.roomBox}>
           <Text style={styles.roomLabel}>避難所チャット（roomId）</Text>
           <View style={styles.roomRow}>
@@ -98,8 +92,8 @@ export default function ChatContactsScreen() {
               value={roomId}
               onChangeText={setRoomId}
               placeholder="例：shelter_001"
-              placeholderTextColor="#9ca3af"
-              style={[styles.roomInput]}
+              placeholderTextColor={Design.colors.textMuted}
+              style={styles.roomInput}
               autoCapitalize="none"
             />
             <Link
@@ -126,16 +120,15 @@ export default function ChatContactsScreen() {
             value={q}
             onChangeText={setQ}
             placeholder="連絡先を検索…"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={Design.colors.textMuted}
             style={styles.searchInput}
           />
         </View>
 
-        {/* 連絡先一覧 */}
-        <View style={{ flex: 1 }}>
+        <View style={styles.listWrap}>
           <SectionList
-            style={{ flex: 1 }}
-            contentContainerStyle={{ paddingBottom: 24 }}
+            style={styles.sectionList}
+            contentContainerStyle={styles.sectionListContent}
             sections={sections}
             keyExtractor={(item) => item.id}
             renderSectionHeader={({ section }) => (
@@ -168,76 +161,110 @@ export default function ChatContactsScreen() {
           />
         </View>
       </View>
-    </MobileFrame>
+    </ScreenLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#ffffffff" },
-
-  // ✅ 追加：避難所チャット導線
-  roomBox: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
-  roomLabel: { fontSize: 12, fontWeight: "700", color: "#374151", marginBottom: 6 },
-  roomRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  container: { flex: 1 },
+  roomBox: {
+    paddingTop: Design.spacing.sm,
+    paddingBottom: Design.spacing.sm,
+  },
+  roomLabel: {
+    fontSize: Design.fontSize.caption,
+    fontWeight: Design.fontWeight.bold,
+    color: Design.colors.textSecondary,
+    marginBottom: Design.spacing.sm,
+  },
+  roomRow: {
+    flexDirection: "row",
+    gap: Design.spacing.sm,
+    alignItems: "center",
+  },
   roomInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    backgroundColor: "#fff",
-    color: "#111827",
+    borderColor: Design.colors.border,
+    borderRadius: Design.radius.md,
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.md,
+    fontSize: Design.fontSize.body,
+    backgroundColor: Design.colors.background,
+    color: Design.colors.text,
   },
   roomButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: "#2563eb",
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.md,
+    borderRadius: Design.radius.md,
+    backgroundColor: Design.colors.primary,
   },
-  roomButtonText: { color: "black", fontWeight: "700" },
-  roomHint: { marginTop: 6, fontSize: 11, color: "#6b7280" },
-
-  searchBox: { paddingHorizontal: 16, paddingVertical: 10 },
+  roomButtonText: {
+    color: Design.colors.white,
+    fontWeight: Design.fontWeight.bold,
+    fontSize: Design.fontSize.body,
+  },
+  roomHint: {
+    marginTop: Design.spacing.sm,
+    fontSize: Design.fontSize.caption,
+    color: Design.colors.textMuted,
+  },
+  searchBox: { paddingVertical: Design.spacing.md },
   searchInput: {
     borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    backgroundColor: "#fff",
+    borderColor: Design.colors.border,
+    borderRadius: Design.radius.md,
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.md,
+    fontSize: Design.fontSize.body,
+    backgroundColor: Design.colors.background,
+    color: Design.colors.text,
   },
-
+  listWrap: { flex: 1 },
+  sectionList: { flex: 1 },
+  sectionListContent: { paddingBottom: Design.spacing.xxl },
   sectionHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#f3f4f6",
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.sm,
+    backgroundColor: Design.colors.surface,
     borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
+    borderTopColor: Design.colors.border,
   },
-  sectionHeaderText: { fontSize: 14, fontWeight: "700", color: "#111827" },
-
+  sectionHeaderText: {
+    fontSize: Design.fontSize.body,
+    fontWeight: Design.fontWeight.bold,
+    color: Design.colors.text,
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: "#f3f4f6",
+    borderBottomColor: Design.colors.borderLight,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#e5e7eb",
+    width: 44,
+    height: 44,
+    borderRadius: Design.radius.lg,
+    backgroundColor: Design.colors.surface,
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { fontSize: 16, fontWeight: "700", color: "#111827" },
-
-  rowText: { marginLeft: 12, flex: 1 },
-  name: { fontSize: 16, fontWeight: "600", color: "#111827" },
-  preview: { marginTop: 2, fontSize: 12, color: "#6b7280" },
+  avatarText: {
+    fontSize: Design.fontSize.body,
+    fontWeight: Design.fontWeight.bold,
+    color: Design.colors.text,
+  },
+  rowText: { marginLeft: Design.spacing.md, flex: 1 },
+  name: {
+    fontSize: Design.fontSize.body,
+    fontWeight: Design.fontWeight.semi,
+    color: Design.colors.text,
+  },
+  preview: {
+    marginTop: Design.spacing.xs,
+    fontSize: Design.fontSize.caption,
+    color: Design.colors.textMuted,
+  },
 });

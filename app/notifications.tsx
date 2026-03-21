@@ -1,5 +1,4 @@
-// app/notifications.tsx
-import React, { useMemo, useState } from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -7,73 +6,43 @@ import {
   ScrollView,
   TouchableOpacity,
 } from "react-native";
-import { router } from "expo-router";
-import { MobileFrame } from "@/components/MobileFrame";
-import { ArrowLeft, Check } from "lucide-react-native";
-import { BrowserHeader } from "@/components/BrowserHeader";
-
-
-type NotificationItem = {
-  id: string;
-  text: string;
-  time: string;      // "12:34" みたいな表示用
-  unread: boolean;
-};
-
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  { id: "n1", text: "◯◯さんからメッセージを受信しました", time: "12:01", unread: true },
-  { id: "n2", text: "××にメッセージを送信しました", time: "11:48", unread: false },
-  { id: "n3", text: "ネットワークに接続しました", time: "11:20", unread: true },
-  { id: "n4", text: "オフラインになりました", time: "10:55", unread: false },
-];
+import { Design } from "@/constants/Design";
+import { ScreenLayout } from "@/components/ScreenLayout";
+import { useNotifications } from "@/contexts/NotificationContext";
+import { Check } from "lucide-react-native";
 
 export default function NotificationsScreen() {
-  const [items, setItems] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
-
-  const unreadCount = useMemo(
-    () => items.filter((x) => x.unread).length,
-    [items]
-  );
-
-  const markAllRead = () => {
-    setItems((prev) => prev.map((x) => ({ ...x, unread: false })));
-  };
-
-  const toggleRead = (id: string) => {
-    setItems((prev) =>
-      prev.map((x) => (x.id === id ? { ...x, unread: !x.unread } : x))
-    );
-  };
+  const { items, unreadCount, markAllRead, toggleRead } = useNotifications();
 
   return (
-    <MobileFrame>
-      <View style={styles.container}>
-        {/* ヘッダー（Homeと同じトーン） */}
-        <BrowserHeader />
-        <View style={styles.header}>          
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft size={20} color="#111827" />
-            <Text style={styles.backText}>戻る</Text>
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.title}>通知</Text>
-            <Text style={styles.subtitle}>未読 {unreadCount} 件</Text>
-          </View>
-
-          <TouchableOpacity style={styles.actionButton} onPress={markAllRead}>
-            <Check size={18} color="#111827" />
-            <Text style={styles.actionText}>全て既読</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* 一覧 */}
-        <ScrollView contentContainerStyle={styles.list}>
-          {items.map((n) => (
+    <ScreenLayout
+      title="通知"
+      subtitle={unreadCount > 0 ? `未読 ${unreadCount} 件` : undefined}
+      rightAction={
+        <TouchableOpacity
+          onPress={markAllRead}
+          style={styles.actionButton}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Check size={20} color={Design.colors.text} />
+          <Text style={styles.actionText}>全て既読</Text>
+        </TouchableOpacity>
+      }
+      contentStyle={styles.content}
+    >
+      <ScrollView
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+      >
+        {items.length === 0 ? (
+          <Text style={styles.emptyText}>通知はありません</Text>
+        ) : (
+          items.map((n) => (
             <TouchableOpacity
               key={n.id}
               style={[styles.row, n.unread && styles.rowUnread]}
               onPress={() => toggleRead(n.id)}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
             >
               <View style={styles.left}>
                 <Text style={styles.text} numberOfLines={2}>
@@ -81,76 +50,103 @@ export default function NotificationsScreen() {
                 </Text>
                 <Text style={styles.time}>{n.time}</Text>
               </View>
-
-              {/* 未読ドット */}
-              {n.unread ? <View style={styles.unreadDot} /> : <View style={styles.unreadDotHidden} />}
+              {n.unread ? (
+                <View style={styles.unreadDot} />
+              ) : (
+                <View style={styles.unreadDotHidden} />
+              )}
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+          ))
+        )}
+      </ScrollView>
 
-        {/* 下部ヒント */}
-        <View style={styles.footerHint}>
-          <Text style={styles.footerText}>※通知をタップすると既読/未読を切り替えます</Text>
-        </View>
+      <View style={styles.footerHint}>
+        <Text style={styles.footerText}>
+          通知をタップすると既読／未読を切り替えます
+        </Text>
       </View>
-    </MobileFrame>
+    </ScreenLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: "#f9fafb",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
+  content: {
+    paddingHorizontal: Design.spacing.lg,
+    paddingTop: Design.spacing.lg,
   },
-  backButton: { flexDirection: "row", alignItems: "center", paddingVertical: 4, paddingRight: 8 },
-  backText: { marginLeft: 4, fontSize: 14, color: "#4b5563" },
-
-  headerCenter: { flex: 1, alignItems: "center" },
-  title: { fontSize: 18, fontWeight: "700", color: "#111827" },
-  subtitle: { marginTop: 2, fontSize: 12, color: "#6b7280" },
-
-  actionButton: { flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 8, paddingVertical: 4 },
-  actionText: { fontSize: 12, color: "#111827", fontWeight: "600" },
-
-  list: { padding: 12, paddingBottom: 24 },
-
+  list: {
+    paddingBottom: Design.spacing.xxl,
+  },
+  emptyText: {
+    fontSize: Design.fontSize.body,
+    color: Design.colors.textMuted,
+    paddingVertical: Design.spacing.xxl,
+    textAlign: "center",
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#f3f4f6",          // Homeの通知エリアと近い色
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 10,
+    backgroundColor: Design.colors.surface,
+    borderRadius: Design.radius.md,
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.lg,
+    marginBottom: Design.spacing.md,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: Design.colors.border,
   },
   rowUnread: {
-    backgroundColor: "#eef2ff",
-    borderColor: "#c7d2fe",
+    backgroundColor: Design.colors.primaryMuted,
+    borderColor: Design.colors.border,
   },
-
-  left: { flex: 1, paddingRight: 10 },
-  text: { fontSize: 16, color: "#6b7280" }, // Homeで大きくしたフォントに寄せた
-  time: { marginTop: 6, fontSize: 12, color: "#9ca3af" },
-
-  unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#ef4444" },
-  unreadDotHidden: { width: 10, height: 10, borderRadius: 5, backgroundColor: "transparent" },
-
+  left: {
+    flex: 1,
+    paddingRight: Design.spacing.md,
+  },
+  text: {
+    fontSize: Design.fontSize.body,
+    color: Design.colors.text,
+  },
+  time: {
+    marginTop: Design.spacing.xs,
+    fontSize: Design.fontSize.caption,
+    color: Design.colors.textMuted,
+  },
+  unreadDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Design.colors.danger,
+  },
+  unreadDotHidden: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "transparent",
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Design.spacing.xs,
+    paddingVertical: Design.spacing.xs,
+    paddingLeft: Design.spacing.sm,
+  },
+  actionText: {
+    fontSize: Design.fontSize.body,
+    fontWeight: Design.fontWeight.semi,
+    color: Design.colors.text,
+  },
   footerHint: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.md,
     borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
-    backgroundColor: "#fff",
+    borderTopColor: Design.colors.border,
+    backgroundColor: Design.colors.surface,
+    marginHorizontal: -Design.spacing.lg,
+    marginBottom: -Design.spacing.lg,
   },
-  footerText: { fontSize: 12, color: "#9ca3af" },
+  footerText: {
+    fontSize: Design.fontSize.caption,
+    color: Design.colors.textMuted,
+  },
 });

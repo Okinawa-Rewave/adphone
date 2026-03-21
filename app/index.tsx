@@ -1,24 +1,34 @@
 // app/index.tsx
-import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
+import { AppHeader } from "@/components/AppHeader";
+import { BrowserHeader } from "@/components/BrowserHeader";
+import { Design } from "@/constants/Design";
 import { MobileFrame } from '@/components/MobileFrame';
 import { NavButton } from '@/components/NavButton';
+import { useNotifications } from '@/contexts/NotificationContext';
 import {
-  MessageSquare,
-  Map as MapIcon,
-  Camera,
-  Settings,
-  Bot,
   Bell,
+  Bot,
+  Camera,
+  Map as MapIcon,
+  MessageSquare,
+  Settings,
+  Phone,
+  Package,
+  BookOpen,
 } from 'lucide-react-native';
-import { BrowserHeader } from "@/components/BrowserHeader";
-import React, { useState, useRef } from 'react';
+import React, { useRef, useState } from 'react';
+import { Dimensions, ScrollView, StyleSheet, Text, View, TouchableOpacity, Linking } from 'react-native';
+import { Link, useRouter } from 'expo-router';
 
 
+
+const MIN_SPIN_MS = 500;
+const SUCCESS_PULSE_MS = 600;
+const HOME_NOTIFICATION_LIMIT = 5;
 
 export default function HomeScreen() {
-  //更新ボタン用の定数
-  const MIN_SPIN_MS = 500;
-  const SUCCESS_PULSE_MS = 600;
+  const router = useRouter();
+  const { items, unreadCount, markRead, refresh } = useNotifications();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshSuccessPulse, setRefreshSuccessPulse] = useState(false);
   const refreshStartedAtRef = useRef<number | null>(null);
@@ -27,62 +37,106 @@ export default function HomeScreen() {
     const startedAt = refreshStartedAtRef.current ?? Date.now();
     const elapsed = Date.now() - startedAt;
     const remaining = Math.max(0, MIN_SPIN_MS - elapsed);
-
     setTimeout(() => {
       setRefreshing(false);
       refreshStartedAtRef.current = null;
-
       setRefreshSuccessPulse(true);
       setTimeout(() => setRefreshSuccessPulse(false), SUCCESS_PULSE_MS);
     }, remaining);
-  };//ここまで更新ボタン用
+  };
+
+  const handleRefresh = async () => {
+    refreshStartedAtRef.current = Date.now();
+    setRefreshSuccessPulse(false);
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      stopRefreshingSuccess();
+    }
+  };
+
+  const handleNotificationPress = (id: string, href?: string) => {
+    markRead(id);
+    if (href) router.push(href as any);
+  };
+
+  const displayItems = items.slice(0, HOME_NOTIFICATION_LIMIT);
 
 
   return (
     <MobileFrame isOnline={true}>
-      {/* ヘッダー */}
       <BrowserHeader
+        showBack={false}
         refreshing={refreshing}
         refreshSuccessPulse={refreshSuccessPulse}
-        onRefresh={() => {
-          refreshStartedAtRef.current = Date.now();
-          setRefreshSuccessPulse(false);
-          setRefreshing(true);
-
-          // ★ 今は「再取得した想定」で少し待つ
-          setTimeout(() => {
-            // 将来ここを実データ取得に置き換える
-            stopRefreshingSuccess();
-          }, 100);
-        }}
+        onRefresh={handleRefresh}
       />
+      <AppHeader title="ホーム" showBack={false} />
 
-
-      {/* ★ ここは固定エリア（上部30%） */}
+      {/* 通知エリア（上部30%） */}
       <View style={styles.notificationArea}>
-        <View style={styles.notificationList}>
-          <View style={styles.notificationRow}>
-            <Text style={styles.notificationText}>
-              • ◯◯さんからメッセージを受信しました
-            </Text>
-            <Text style={styles.notificationTime}>XX:XX</Text>
-          </View>
-
-          <View style={styles.notificationRow}>
-            <Text style={styles.notificationText}>
-              • ××にメッセージを送信しました
-            </Text>
-            <Text style={styles.notificationTime}>XX:XX</Text>
-          </View>
-
-          <View style={styles.notificationRow}>
-            <Text style={styles.notificationText}>
-              • ネットワークに接続しました
-            </Text>
-            <Text style={styles.notificationTime}>XX:XX</Text>
-          </View>
-
+        <View style={styles.notificationHeader}>
+          <Text style={styles.notificationTitle}>通知</Text>
+          {unreadCount > 0 && (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadBadgeText}>{unreadCount}</Text>
+            </View>
+          )}
         </View>
+
+        <ScrollView style={styles.notificationList} showsVerticalScrollIndicator={false}>
+          {displayItems.length === 0 ? (
+            <Text style={styles.emptyText}>通知はありません</Text>
+          ) : (
+            displayItems.map((n) => (
+              <TouchableOpacity
+                key={n.id}
+                style={[styles.notificationRow, n.unread && styles.notificationRowUnread]}
+                onPress={() => handleNotificationPress(n.id, n.href)}
+              >
+                <Text style={styles.notificationText} numberOfLines={2}>
+                  • {n.text}
+                </Text>
+                <View style={styles.notificationRight}>
+                  <Text style={styles.notificationTime}>{n.time}</Text>
+                  {n.unread && <View style={styles.unreadDot} />}
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+
+          {items.length > HOME_NOTIFICATION_LIMIT && (
+            <Link href="/notifications" asChild>
+              <TouchableOpacity style={styles.moreLink}>
+                <Text style={styles.moreLinkText}>もっと見る</Text>
+              </TouchableOpacity>
+            </Link>
+          )}
+
+          <View style={styles.quickActions}>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => Linking.openURL('tel:110')}
+            >
+              <Phone size={18} color={Design.colors.danger} />
+              <Text style={styles.quickActionText}>110</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => Linking.openURL('tel:119')}
+            >
+              <Phone size={18} color={Design.colors.danger} />
+              <Text style={styles.quickActionText}>119</Text>
+            </TouchableOpacity>
+            <Link href="/disaster/emergency-contacts" asChild>
+              <TouchableOpacity style={styles.quickActionButton}>
+                <Phone size={18} color={Design.colors.primary} />
+                <Text style={styles.quickActionText}>連絡先</Text>
+              </TouchableOpacity>
+            </Link>
+          </View>
+        </ScrollView>
       </View>
 
       {/* ★ 下部だけスクロール可能に */}
@@ -90,42 +144,56 @@ export default function HomeScreen() {
         <View style={styles.grid}>
           <NavButton
             href="/chat"
-            icon={<MessageSquare size={128} strokeWidth={1.0} color="#111827" />}
+            icon={<MessageSquare size={128} strokeWidth={1.0} color={Design.colors.text} />}
             label="チャット"
             badge={1}
           />
 
           <NavButton
-            href="/InteractiveMap"
-            icon={<MapIcon size={128} strokeWidth={1.0} color="#111827" />}
+            href="/map"
+            icon={<MapIcon size={128} strokeWidth={1.0} color={Design.colors.text} />}
             label="マップ"
           />
 
           <NavButton
             href="/camera"
-            icon={<Camera size={128} strokeWidth={1.0} color="#111827" />}
+            icon={<Camera size={128} strokeWidth={1.0} color={Design.colors.text} />}
             label="カメラ"
           />
 
           <NavButton
             href="/settings"
-            icon={<Settings size={128} strokeWidth={1.0} color="#111827" />}
+            icon={<Settings size={128} strokeWidth={1.0} color={Design.colors.text} />}
             label="かんたん設定"
           />
         </View>
 
         <View style={[styles.grid, styles.gridBottom]}>
           <NavButton
+            href="/disaster/checklist"
+            icon={<Package size={128} strokeWidth={1.0} color={Design.colors.text} />}
+            label="防災グッズ"
+          />
+
+          <NavButton
+            href="/disaster/manual"
+            icon={<BookOpen size={128} strokeWidth={1.0} color={Design.colors.text} />}
+            label="行動マニュアル"
+          />
+        </View>
+
+        <View style={[styles.grid, styles.gridBottom]}>
+          <NavButton
             href="/ai"
-            icon={<Bot size={128} strokeWidth={1.0} color="#111827" />}
+            icon={<Bot size={128} strokeWidth={1.0} color={Design.colors.text} />}
             label="AI"
           />
 
           <NavButton
             href="/notifications"
-            icon={<Bell size={128} strokeWidth={1.0} color="#111827" />}
+            icon={<Bell size={128} strokeWidth={1.0} color={Design.colors.text} />}
             label="通知"
-            badge={3}
+            badge={unreadCount > 0 ? unreadCount : undefined}
           />
         </View>
       </ScrollView>
@@ -139,44 +207,126 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   notificationArea: {
-    backgroundColor: '#f3f4f6',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    backgroundColor: Design.colors.surface,
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    // 画面高さの 30% を固定エリアに
+    borderBottomColor: Design.colors.border,
     height: Dimensions.get("window").height * 0.30,
   },
+  notificationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Design.spacing.sm,
+    marginBottom: Design.spacing.md,
+  },
+  notificationTitle: {
+    fontSize: Design.fontSize.title,
+    fontWeight: Design.fontWeight.bold,
+    color: Design.colors.text,
+  },
+  unreadBadge: {
+    backgroundColor: Design.colors.danger,
+    borderRadius: Design.radius.sm,
+    minWidth: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Design.spacing.sm,
+  },
+  unreadBadgeText: {
+    color: Design.colors.white,
+    fontSize: Design.fontSize.body,
+    fontWeight: Design.fontWeight.bold,
+  },
   notificationList: {
-    gap: 4,
+    flex: 1,
+  },
+  emptyText: {
+    fontSize: Design.fontSize.body,
+    color: Design.colors.textMuted,
+    paddingVertical: Design.spacing.md,
   },
   notificationRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: Design.colors.background,
+    borderRadius: Design.radius.md,
+    paddingHorizontal: Design.spacing.md,
+    paddingVertical: Design.spacing.md,
+    marginBottom: Design.spacing.sm,
+    borderWidth: 1,
+    borderColor: Design.colors.border,
+  },
+  notificationRowUnread: {
+    backgroundColor: Design.colors.primaryMuted,
+    borderColor: Design.colors.border,
   },
   notificationText: {
-    fontSize: 18,
-    color: '#6b7280',
-    flexShrink: 1,
-    paddingRight: 8,
+    flex: 1,
+    fontSize: Design.fontSize.body,
+    color: Design.colors.text,
+    marginRight: Design.spacing.sm,
+  },
+  notificationRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Design.spacing.sm,
   },
   notificationTime: {
-    fontSize: 18,
-    color: '#9ca3af',
+    fontSize: Design.fontSize.caption,
+    color: Design.colors.textMuted,
   },
-  notificationDot: {
-    fontSize: 10,
-    color: '#9ca3af',
+  unreadDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Design.colors.danger,
+  },
+  moreLink: {
+    alignSelf: 'flex-start',
+    paddingVertical: Design.spacing.sm,
+    paddingRight: Design.spacing.xs,
+    marginBottom: Design.spacing.sm,
+  },
+  moreLinkText: {
+    fontSize: Design.fontSize.body,
+    fontWeight: Design.fontWeight.semi,
+    color: Design.colors.primary,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    gap: Design.spacing.sm,
+    marginTop: Design.spacing.sm,
+  },
+  quickActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Design.spacing.sm,
+    backgroundColor: Design.colors.background,
+    paddingVertical: Design.spacing.md,
+    paddingHorizontal: Design.spacing.md,
+    borderRadius: Design.radius.md,
+    borderWidth: 1,
+    borderColor: Design.colors.border,
+  },
+  quickActionText: {
+    fontSize: Design.fontSize.body,
+    fontWeight: Design.fontWeight.semi,
+    color: Design.colors.text,
   },
   grid: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingHorizontal: Design.spacing.lg,
+    paddingTop: Design.spacing.lg,
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 12,
+    rowGap: Design.spacing.md,
   },
   gridBottom: {
-    paddingBottom: 16,
+    paddingBottom: Design.spacing.lg,
   },
 });

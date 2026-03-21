@@ -1,9 +1,7 @@
-// components/NavButton.tsx
-import React from "react";
-import { TouchableOpacity, Text, View, StyleSheet } from "react-native";
+import React, { ReactNode } from "react";
+import { TouchableOpacity, Text, View, StyleSheet, ViewStyle } from "react-native";
 import { Link } from "expo-router";
-import { ReactNode } from "react";
-import { ViewStyle } from "react-native";
+import { Design } from "@/constants/Design";
 
 export type NavButtonProps = {
   href: string;
@@ -13,22 +11,18 @@ export type NavButtonProps = {
   containerStyle?: ViewStyle | ViewStyle[];
 };
 
-export function NavButton({ href, icon, label, badge }: any) {
+export function NavButton({ href, icon, label, badge }: NavButtonProps) {
   return (
     <Link href={href} asChild>
-      <TouchableOpacity style={styles.button}>
+      <TouchableOpacity style={styles.button} activeOpacity={0.7}>
         <View style={styles.iconWrapper}>
           {icon}
-
-          {/* バッジ */}
-          {badge ? (
+          {badge != null && badge > 0 ? (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{badge}</Text>
             </View>
           ) : null}
         </View>
-
-        {/* ラベル（アイコンの真下） */}
         <Text style={styles.label}>{label}</Text>
       </TouchableOpacity>
     </Link>
@@ -38,44 +32,42 @@ export function NavButton({ href, icon, label, badge }: any) {
 const styles = StyleSheet.create({
   button: {
     width: "48%",
-    aspectRatio: 1, // 正方形にして綺麗に配置
-    backgroundColor: "#f9fafb",
-    borderRadius: 16,
+    aspectRatio: 1,
+    backgroundColor: Design.colors.surface,
+    borderRadius: Design.radius.lg,
     justifyContent: "center",
     alignItems: "center",
-    padding: 8,
+    padding: Design.spacing.lg,
+    borderWidth: 1,
+    borderColor: Design.colors.border,
   },
-
   iconWrapper: {
     position: "relative",
     justifyContent: "center",
     alignItems: "center",
   },
-
   label: {
-    marginTop: 8,
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827",
+    marginTop: Design.spacing.sm,
+    fontSize: Design.fontSize.body,
+    fontWeight: Design.fontWeight.semi,
+    color: Design.colors.text,
     textAlign: "center",
   },
-
   badge: {
     position: "absolute",
-    top: -4,
-    right: -4,
-    backgroundColor: "red",
-    borderRadius: 12,
-    minWidth: 22,
-    height: 22,
+    top: -6,
+    right: -6,
+    backgroundColor: Design.colors.danger,
+    borderRadius: Design.radius.sm,
+    minWidth: 24,
+    height: 24,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 4,
+    paddingHorizontal: Design.spacing.sm,
   },
-
   badgeText: {
-    color: "white",
-    fontSize: 12,
-    fontWeight: "700",
+    color: Design.colors.white,
+    fontSize: Design.fontSize.caption,
+    fontWeight: Design.fontWeight.bold,
   },
 });

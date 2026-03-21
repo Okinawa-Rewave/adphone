@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 
 import { useEffect } from "react";
 import { PermissionsAndroid, Platform } from "react-native";
@@ -45,6 +46,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+          <NotificationProvider>
           <Stack screenOptions={{ headerShown: false }}>
             {/* tabs というフォルダ前提をやめて、直下ルートへ */}
             <Stack.Screen name="index" />
@@ -52,15 +54,20 @@ export default function RootLayout() {
             <Stack.Screen name="chat/[id]" />
             <Stack.Screen name="chat/[roomId]" />
             <Stack.Screen name="notifications" />
+            <Stack.Screen name="map/index" />
             <Stack.Screen name="InteractiveMap" />
             <Stack.Screen name="camera" />
             <Stack.Screen name="settings" />
+            <Stack.Screen name="disaster/checklist" />
+            <Stack.Screen name="disaster/manual" />
+            <Stack.Screen name="disaster/emergency-contacts" />
             <Stack.Screen name="ai" />
             <Stack.Screen name="+not-found" />
           </Stack>
 
           <StatusBar style="auto" />
           {/*<StatusBar hidden />*/}
+          </NotificationProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

@@ -8,6 +8,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import {
@@ -25,6 +26,7 @@ import { auth, db } from "@/lib/firebase";
 import { ensureAnonAuth } from "@/lib/auth";
 import { useOnline } from "@/hooks/useOnline";
 
+import { Design } from "@/constants/Design";
 import { MobileFrame } from "@/components/MobileFrame";
 import { AppHeader } from "@/components/AppHeader";
 import { BrowserHeader } from "@/components/BrowserHeader";
@@ -142,56 +144,49 @@ export default function ChatRoomScreen() {
       />
 
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.kav}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={{ flex: 1, padding: 12 }}>
+        <View style={styles.content}>
           <FlatList
             data={messages}
             keyExtractor={(item) => item.id}
             inverted
             keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.listContent}
             renderItem={({ item }) => {
               const myUid = auth.currentUser?.uid ?? uid;
               const mine = item.senderId === myUid;
 
               return (
                 <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: mine ? "flex-end" : "flex-start",
-                    marginVertical: 6,
-                  }}
+                  style={[
+                    styles.messageRow,
+                    mine ? styles.messageRowRight : styles.messageRowLeft,
+                  ]}
                 >
                   {!mine && (
-                    <View style={{ marginRight: 6, alignItems: "center" }}>
-                      <Text style={{ fontSize: 22 }}>
+                    <View style={styles.iconWrap}>
+                      <Text style={styles.iconText}>
                         {item.senderIcon ?? "🙂"}
                       </Text>
                     </View>
                   )}
 
-                  <View style={{ maxWidth: "75%" }}>
+                  <View style={styles.bubbleWrap}>
                     {!mine && (
-                      <Text
-                        style={{
-                          fontSize: 12,
-                          color: "#6b7280",
-                          marginBottom: 2,
-                        }}
-                      >
+                      <Text style={styles.senderName}>
                         {item.senderName ?? "匿名"}
                       </Text>
                     )}
 
                     <View
-                      style={{
-                        backgroundColor: mine ? "#2563eb" : "#111827",
-                        padding: 10,
-                        borderRadius: 14,
-                      }}
+                      style={[
+                        styles.bubble,
+                        mine ? styles.bubbleMe : styles.bubbleOther,
+                      ]}
                     >
-                      <Text style={{ color: "#e5e7eb" }}>{item.text}</Text>
+                      <Text style={styles.bubbleText}>{item.text}</Text>
                     </View>
                   </View>
                 </View>
@@ -199,34 +194,20 @@ export default function ChatRoomScreen() {
             }}
           />
 
-          {/* 入力 */}
-          <View style={{ flexDirection: "row", gap: 8 }}>
+          <View style={styles.inputRow}>
             <TextInput
               value={input}
               onChangeText={setInput}
               placeholder="メッセージ"
-              placeholderTextColor="#6b7280"
-              style={{
-                flex: 1,
-                borderWidth: 1,
-                borderColor: "#374151",
-                borderRadius: 12,
-                padding: 10,
-                color: "#e5e7eb",
-              }}
+              placeholderTextColor={Design.colors.textMuted}
+              style={styles.input}
             />
             <Pressable
               onPress={onSend}
               disabled={!isOnline}
-              style={{
-                paddingHorizontal: 14,
-                borderRadius: 12,
-                backgroundColor: "#2563eb",
-                opacity: isOnline ? 1 : 0.5,
-                justifyContent: "center",
-              }}
+              style={[styles.sendBtn, !isOnline && styles.sendBtnDisabled]}
             >
-              <Text style={{ color: "white" }}>送信</Text>
+              <Text style={styles.sendBtnText}>送信</Text>
             </Pressable>
           </View>
         </View>
@@ -234,3 +215,65 @@ export default function ChatRoomScreen() {
     </MobileFrame>
   );
 }
+
+const styles = StyleSheet.create({
+  kav: { flex: 1 },
+  content: {
+    flex: 1,
+    padding: Design.spacing.lg,
+  },
+  listContent: { paddingBottom: Design.spacing.sm },
+  messageRow: {
+    flexDirection: "row",
+    marginVertical: Design.spacing.sm,
+  },
+  messageRowLeft: { justifyContent: "flex-start" },
+  messageRowRight: { justifyContent: "flex-end" },
+  iconWrap: { marginRight: Design.spacing.sm, alignItems: "center" },
+  iconText: { fontSize: Design.fontSize.title },
+  bubbleWrap: { maxWidth: "75%" },
+  senderName: {
+    fontSize: Design.fontSize.caption,
+    color: Design.colors.textMuted,
+    marginBottom: Design.spacing.xs,
+  },
+  bubble: {
+    padding: Design.spacing.md,
+    borderRadius: Design.radius.lg,
+  },
+  bubbleMe: { backgroundColor: Design.colors.primary },
+  bubbleOther: { backgroundColor: Design.colors.text },
+  bubbleText: {
+    color: Design.colors.background,
+    fontSize: Design.fontSize.body,
+  },
+  inputRow: {
+    flexDirection: "row",
+    gap: Design.spacing.sm,
+    marginTop: Design.spacing.sm,
+  },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: Design.colors.border,
+    borderRadius: Design.radius.md,
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.md,
+    fontSize: Design.fontSize.body,
+    color: Design.colors.text,
+    backgroundColor: Design.colors.background,
+  },
+  sendBtn: {
+    paddingHorizontal: Design.spacing.lg,
+    borderRadius: Design.radius.md,
+    backgroundColor: Design.colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  sendBtnDisabled: { opacity: 0.5 },
+  sendBtnText: {
+    color: Design.colors.white,
+    fontSize: Design.fontSize.body,
+    fontWeight: Design.fontWeight.semi,
+  },
+});
