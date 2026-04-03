@@ -7,6 +7,7 @@ export type Category =
   | 'landslide'
   | 'gas_leak'
   | 'danger'
+  | 'injured'
 
 export type IssuerType = 0 | 1  // 0: 一般ユーザー  1: 公的機関
 

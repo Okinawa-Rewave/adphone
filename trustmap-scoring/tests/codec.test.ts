@@ -47,7 +47,7 @@ describe('codec', () => {
   it('全カテゴリが正しく変換される', () => {
     const categories = [
       'flood', 'fire', 'road_block', 'building_collapse',
-      'tsunami', 'landslide', 'gas_leak', 'danger'
+      'tsunami', 'landslide', 'gas_leak', 'danger', 'injured'
     ] as const
     for (const category of categories) {
       const decoded = decodePacket(encodePacket(makePacket({ category })), 'pk', 'sig')
@@ -63,5 +63,11 @@ describe('codec', () => {
 
   it('短すぎるバイト列はnullを返す', () => {
     expect(decodePacket(new Uint8Array(10), 'pk', 'sig')).toBeNull()
+  })
+
+  it('injuredカテゴリが正しく変換される', () => {
+    const original = makePacket({ category: 'injured' })
+    const decoded  = decodePacket(encodePacket(original), 'pk', 'sig')
+    expect(decoded?.category).toBe('injured')
   })
 })

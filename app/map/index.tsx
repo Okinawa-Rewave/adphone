@@ -34,88 +34,49 @@ const trustMapEngine = new TrustMapEngine(verifyFn);
 // ── ダミーパケット（動作確認用・本番では削除）────
 const NOW = Date.now() / 1000;
 const DUMMY_PACKETS: RawPacket[] = [
-  // ── クラスターA: 浸水（4人・50m範囲に散らばる → 大きい円）──
   {
     id: 'a1', category: 'flood', severity: 4,
-    lat: 26.5920, lng: 127.9780,
+    lat: 35.6580, lng: 139.7000,
     timestamp: NOW - 300, issuerType: 0,
     pubkey: 'pk', signature: 'sig', note: '道路が浸水',
   },
   {
     id: 'a2', category: 'flood', severity: 3,
-    lat: 26.5923, lng: 127.9785,
+    lat: 35.6583, lng: 139.7005,
     timestamp: NOW - 600, issuerType: 0,
     pubkey: 'pk', signature: 'sig',
   },
   {
     id: 'a3', category: 'flood', severity: 4,
-    lat: 26.5917, lng: 127.9775,
+    lat: 35.6577, lng: 139.6995,
     timestamp: NOW - 120, issuerType: 1,
     pubkey: 'pk', signature: 'sig', note: '消防署確認済み',
   },
   {
-    id: 'a4', category: 'flood', severity: 4,
-    lat: 26.5925, lng: 127.9778,
-    timestamp: NOW - 60, issuerType: 0,
-    pubkey: 'pk', signature: 'sig',
-  },
-
-  // ── クラスターB: 火災（2人・ほぼ同地点 → 小さい円）──
-  {
     id: 'b1', category: 'fire', severity: 4,
-    lat: 26.5940, lng: 127.9800,
+    lat: 35.6620, lng: 139.7050,
     timestamp: NOW - 90, issuerType: 0,
     pubkey: 'pk', signature: 'sig', note: '住宅街で火災発生',
   },
   {
-    id: 'b2', category: 'fire', severity: 4,
-    lat: 26.5941, lng: 127.9801,
-    timestamp: NOW - 180, issuerType: 0,
-    pubkey: 'pk', signature: 'sig',
-  },
-
-  // ── クラスターC: 道路閉鎖（1人 → 最小円）──
-  {
     id: 'c1', category: 'road_block', severity: 2,
-    lat: 26.5900, lng: 127.9760,
+    lat: 35.6540, lng: 139.6980,
     timestamp: NOW - 1200, issuerType: 0,
     pubkey: 'pk', signature: 'sig', note: '土砂で通行止め',
   },
-
-  // ── クラスターD: 浸水（別の場所・50m以上離れているので別クラスター）──
   {
-    id: 'd1', category: 'flood', severity: 3,
-    lat: 26.5880, lng: 127.9820,
-    timestamp: NOW - 400, issuerType: 0,
-    pubkey: 'pk', signature: 'sig', note: '別の場所でも浸水',
-  },
-  {
-    id: 'd2', category: 'flood', severity: 3,
-    lat: 26.5882, lng: 127.9822,
-    timestamp: NOW - 500, issuerType: 0,
-    pubkey: 'pk', signature: 'sig',
-  },
-
-  // ── クラスターE: ガス漏れ（3人・広範囲 → 大きい円）──
-  {
-    id: 'e1', category: 'gas_leak', severity: 3,
-    lat: 26.5960, lng: 127.9750,
+    id: 'd1', category: 'injured', severity: 3,
+    lat: 35.6600, lng: 139.7020,
     timestamp: NOW - 200, issuerType: 0,
-    pubkey: 'pk', signature: 'sig', note: 'ガス臭あり',
+    pubkey: 'pk', signature: 'sig', note: '足をけがした人がいる',
   },
   {
-    id: 'e2', category: 'gas_leak', severity: 3,
-    lat: 26.5965, lng: 127.9758,
+    id: 'd2', category: 'injured', severity: 4,
+    lat: 35.6602, lng: 139.7022,
     timestamp: NOW - 300, issuerType: 0,
-    pubkey: 'pk', signature: 'sig',
+    pubkey: 'pk', signature: 'sig', note: '動けない状態',
   },
-  {
-    id: 'e3', category: 'gas_leak', severity: 4,
-    lat: 26.5955, lng: 127.9745,
-    timestamp: NOW - 150, issuerType: 0,
-    pubkey: 'pk', signature: 'sig',
-  },
-]
+];
 
 const SELF_ID = 'userA';
 type Mode = 'walk' | 'car';
@@ -123,14 +84,14 @@ type Mode = 'walk' | 'car';
 type UserPos     = { id: string; lat: number; lng: number };
 type Destination = { lat: number; lng: number; name: string; isShelter: boolean };
 
+// ── フィルタの型 ──────────────────────────────────
+type FilterKey = 'disasters' | 'shelters' | 'injured';
+type FilterState = Record<FilterKey, boolean>;
+
 // ── 災害回避の半径（★ごと）──────────────────────
 const DISASTER_RADIUS_M: Record<1 | 2 | 3, number> = {
-  3: 100,  // ★★★ 高信頼 → 100m避ける
-  2: 60,   // ★★☆ 中信頼 → 60m避ける
-  1: 30,   // ★☆☆ 低信頼 → 30m避ける
+  3: 100, 2: 60, 1: 30,
 }
-
-// ── ユーティリティ ────────────────────────────────
 
 function distanceM(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000
@@ -145,18 +106,20 @@ function distanceM(lat1: number, lng1: number, lat2: number, lng2: number): numb
 }
 
 function filterSafeNodes(nodes: number[][], events: ScoredEvent[]): number[][] {
-  if (events.length === 0) return nodes
+  const dangerEvents = events.filter(e => e.category !== 'injured')
+  if (dangerEvents.length === 0) return nodes
   return nodes.filter(([lng, lat]) =>
-    events.every((e) => distanceM(lat, lng, e.lat, e.lng) > DISASTER_RADIUS_M[e.stars])
+    dangerEvents.every((e) => distanceM(lat, lng, e.lat, e.lng) > DISASTER_RADIUS_M[e.stars])
   )
 }
 
 function filterSafeRoads(features: any[], events: ScoredEvent[]): any[] {
-  if (events.length === 0) return features
+  const dangerEvents = events.filter(e => e.category !== 'injured')
+  if (dangerEvents.length === 0) return features
   return features.filter((f: any) => {
     const coords = f.geometry.coordinates as number[][]
     return coords.every(([lng, lat]) =>
-      events.every((e) => distanceM(lat, lng, e.lat, e.lng) > DISASTER_RADIUS_M[e.stars])
+      dangerEvents.every((e) => distanceM(lat, lng, e.lat, e.lng) > DISASTER_RADIUS_M[e.stars])
     )
   })
 }
@@ -179,8 +142,15 @@ export default function App() {
   const [locError,   setLocError]   = useState<string | null>(null);
   const [locLoading, setLocLoading] = useState(true);
 
-  const [destination, setDestination] = useState<Destination | null>(null);
+  const [destination,    setDestination]    = useState<Destination | null>(null);
   const [disasterEvents, setDisasterEvents] = useState<ScoredEvent[]>([]);
+
+  // ── フィルタ状態 ──────────────────────────────────
+  const [filter, setFilter] = useState<FilterState>({
+    disasters: true,
+    shelters:  true,
+    injured:   true,
+  });
 
   // ── 道路ネットワーク構築 ──────────────────────────
   function explodeMultiLineStrings(features: any[]) {
@@ -231,23 +201,16 @@ export default function App() {
       try {
         setLocLoading(true);
         setLocError(null);
-
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
           setLocError('位置情報の権限がありません（設定から許可してください）');
           setLocLoading(false);
           return;
         }
-
         const loc = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
-
-        setUserPos({
-          id: SELF_ID,
-          lat: loc.coords.latitude,
-          lng: loc.coords.longitude,
-        });
+        setUserPos({ id: SELF_ID, lat: loc.coords.latitude, lng: loc.coords.longitude });
       } catch (e: any) {
         setLocError(String(e?.message ?? e));
       } finally {
@@ -260,7 +223,6 @@ export default function App() {
   useEffect(() => {
     try {
       const allFeatures = (integratedRoadData as any).features ?? [];
-
       const walkRaw = allFeatures.filter(
         (f: any) => f.properties?.highway && f.properties.highway !== 'motorway'
       );
@@ -268,15 +230,12 @@ export default function App() {
         (f: any) => f.properties?.highway &&
           !['footway', 'steps', 'pedestrian'].includes(f.properties.highway)
       );
-
       const walkExp = explodeMultiLineStrings(walkRaw);
       const carExp  = explodeMultiLineStrings(carRaw);
-
       setWalkFinder(new PathFinder(turf.featureCollection(walkExp), { precision: 1e-5 }));
       setWalkNodes(extractNodes(walkExp));
       setCarFinder(new PathFinder(turf.featureCollection(carExp), { precision: 1e-5 }));
       setCarNodes(extractNodes(carExp));
-
       setPfReady(true);
     } catch (e) {
       Alert.alert('エラー', 'データの初期化に失敗しました');
@@ -291,17 +250,14 @@ export default function App() {
       }
     };
     init();
-
     const id = setInterval(() => {
       if (!userPos) return;
       const events = trustMapEngine.computeScores(userPos.lat, userPos.lng);
       setDisasterEvents(events);
     }, 5000);
-
     return () => clearInterval(id);
   }, []);
 
-  // ── TrustMap: userPosが変わったらすぐスコア再計算 ──
   useEffect(() => {
     if (!userPos) return;
     const events = trustMapEngine.computeScores(userPos.lat, userPos.lng);
@@ -336,6 +292,15 @@ export default function App() {
     );
   }, [webReady, disasterEvents]);
 
+  // ── フィルタ変更をWebViewに送信 ──────────────────
+  const handleFilter = (key: FilterKey) => {
+    const newVal = !filter[key];
+    setFilter((prev) => ({ ...prev, [key]: newVal }));
+    webViewRef.current?.postMessage(
+      JSON.stringify({ type: 'setFilter', key, value: newVal })
+    );
+  };
+
   // ── 経路探索（災害エリア回避付き）────────────────
   const findRoute = useCallback((start: UserPos, end: Destination) => {
     const isWalk = mode === 'walk';
@@ -344,7 +309,6 @@ export default function App() {
     if (!finder || nodes.length === 0) return;
 
     setIsRouting(true);
-
     setTimeout(() => {
       try {
         const currentRaw = ((integratedRoadData as any).features ?? []).filter((f: any) => {
@@ -353,49 +317,31 @@ export default function App() {
             ? (h && h !== 'motorway')
             : (h && !['footway', 'steps', 'pedestrian'].includes(h));
         });
-
         const exploded = explodeMultiLineStrings(currentRaw);
         const roads    = turf.featureCollection(exploded);
-
         const snapStart = nearestPointOnLine(roads, turf.point([start.lng, start.lat]));
         const snapEnd   = nearestPointOnLine(roads, turf.point([end.lng, end.lat]));
-
-        // 災害回避: 安全なノード・道路だけに絞る
         const safeNodes = filterSafeNodes(nodes, disasterEvents);
         const safeRoads = filterSafeRoads(exploded, disasterEvents);
-
-        // 安全なノードが極端に少ない場合はフォールバック
         const routingNodes  = safeNodes.length > 10 ? safeNodes : nodes;
         const startNode     = snapToNearestNode(snapStart, routingNodes);
         const endNode       = snapToNearestNode(snapEnd,   routingNodes);
-
-        // 安全な道路だけでPathFinderを再構築
         const routingFinder = safeRoads.length > 10
           ? new PathFinder(turf.featureCollection(safeRoads), { precision: 1e-5 })
           : finder;
-
         const result = routingFinder.findPath(startNode, endNode);
-
         if (result?.path) {
           setDistance(Math.round(result.weight * 1000));
           const coords = result.path.map((p: number[]) => [p[1], p[0]]);
-
-          webViewRef.current?.postMessage(
-            JSON.stringify({ type: 'drawRoute', coordinates: coords })
-          );
-          webViewRef.current?.postMessage(
-            JSON.stringify({
-              type: 'updateDestinationPin',
-              lat: end.lat, lng: end.lng,
-              name: end.name, isShelter: end.isShelter
-            })
-          );
+          webViewRef.current?.postMessage(JSON.stringify({ type: 'drawRoute', coordinates: coords }));
+          webViewRef.current?.postMessage(JSON.stringify({
+            type: 'updateDestinationPin',
+            lat: end.lat, lng: end.lng,
+            name: end.name, isShelter: end.isShelter
+          }));
         } else {
           setDistance(null);
-          Alert.alert(
-            '経路が見つかりません',
-            '災害エリアを避けると経路が見つかりませんでした。別の目的地を選んでください。'
-          );
+          Alert.alert('経路が見つかりません', '災害エリアを避けると経路が見つかりませんでした。');
         }
       } catch (err) {
         console.error('Routing Error:', err);
@@ -449,6 +395,16 @@ export default function App() {
         ? `現在地: ${userPos.lat.toFixed(4)}, ${userPos.lng.toFixed(4)} ｜ ${mode === 'walk' ? '徒歩' : '車'}`
         : '現在地なし';
 
+  // フィルタボタンの定義
+  const filterButtons: { key: FilterKey; label: string; icon: string }[] = [
+    { key: 'disasters', label: '災害',  icon: '🚨' },
+    { key: 'shelters',  label: '避難所', icon: '🏫' },
+    { key: 'injured',   label: 'けが人', icon: '🚑' },
+  ];
+
+  const disasterCount = disasterEvents.filter(e => e.category !== 'injured').length;
+  const injuredCount  = disasterEvents.filter(e => e.category === 'injured').length;
+
   return (
     <MobileFrame>
       <BrowserHeader />
@@ -485,14 +441,40 @@ export default function App() {
 
         {pfReady && webReady && (
           <>
-            {disasterEvents.length > 0 && (
-              <View style={styles.disasterBadge}>
-                <Text style={styles.disasterBadgeText}>
-                  ⚠️ {disasterEvents.length} 件の危険情報
-                </Text>
-              </View>
-            )}
-
+            {/* フィルタボタン（左上）*/}
+            <View style={styles.filterRow}>
+              {filterButtons.map((btn) => (
+                <TouchableOpacity
+                  key={btn.key}
+                  style={[styles.filterBtn, filter[btn.key] && styles.filterBtnActive]}
+                  onPress={() => handleFilter(btn.key)}
+                >
+                  <Text style={styles.filterBtnText}>
+                    {btn.icon} {btn.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+{/*
+            件数バッジ（右上）
+            <View style={styles.badgeCol}>
+              {disasterCount > 0 && filter.disasters && (
+                <View style={[styles.badge, { borderColor: '#F59E0B' }]}>
+                  <Text style={[styles.badgeText, { color: '#92400E' }]}>
+                    🚨 {disasterCount} 件
+                  </Text>
+                </View>
+              )}
+              {injuredCount > 0 && filter.injured && (
+                <View style={[styles.badge, { borderColor: '#F97316' }]}>
+                  <Text style={[styles.badgeText, { color: '#9A3412' }]}>
+                    🚑 {injuredCount} 件
+                  </Text>
+                </View>
+              )}
+            </View>
+*/}
+            {/* 現在地に戻る */}
             <TouchableOpacity
               style={[styles.locateButton, (!userPos || locLoading) && { opacity: 0.5 }]}
               onPress={handleCenterOnSelf}
@@ -501,6 +483,7 @@ export default function App() {
               <Ionicons name="locate" size={26} color="#007AFF" />
             </TouchableOpacity>
 
+            {/* 下部カード */}
             <SafeAreaView style={styles.infoCard}>
               <View style={styles.infoRow}>
                 <View style={{ flex: 1 }}>
@@ -509,7 +492,6 @@ export default function App() {
                     {destination ? destination.name : '地図をタップして選択'}
                   </Text>
                 </View>
-
                 {destination && distance !== null && !isRouting && (
                   <View style={styles.distanceBadge}>
                     <Text style={styles.distanceText}>
@@ -565,26 +547,61 @@ const styles = StyleSheet.create({
     fontWeight: Design.fontWeight.bold,
     fontSize: Design.fontSize.body,
   },
-  disasterBadge: {
+
+  // フィルタボタン行（左上）
+  filterRow: {
     position: 'absolute',
     top: 12,
     left: Design.spacing.lg,
-    backgroundColor: '#FEF3C7',
-    borderRadius: Design.radius.md,
+    flexDirection: 'row',
+    gap: 8,
+    zIndex: 15,
+  },
+  filterBtn: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: '#F59E0B',
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  filterBtnActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+  },
+  filterBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+
+  // 件数バッジ（右上）
+  badgeCol: {
+    position: 'absolute',
+    top: 12,
+    right: Design.spacing.lg,
+    gap: 6,
     zIndex: 15,
   },
-  disasterBadgeText: {
-    color: '#92400E',
-    fontSize: Design.fontSize.caption,
-    fontWeight: Design.fontWeight.bold,
+  badge: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
   },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+
   locateButton: {
     position: 'absolute',
-    bottom: 180,
+    bottom: 160,
     right: Design.spacing.lg,
     backgroundColor: Design.colors.background,
     width: 52,
@@ -602,12 +619,12 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     position: 'absolute',
-    bottom: 26,        // 28 → 12（下に近づける）
+    bottom: 12,
     left: 20,
     right: 20,
     backgroundColor: Design.colors.background,
     borderRadius: 20,
-    padding: 12,       // 20 → 12（内側を小さく）
+    padding: 12,
     elevation: 10,
     shadowColor: '#000',
     shadowOpacity: 0.2,
@@ -620,7 +637,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 3,
+    marginBottom: 4,
   },
   destLabel: {
     fontSize: Design.fontSize.caption,

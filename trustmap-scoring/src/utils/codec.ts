@@ -9,6 +9,7 @@ export const CATEGORY_ENCODE: Record<Category, number> = {
   landslide:         0x06,
   gas_leak:          0x07,
   danger:            0x08,
+  injured:           0x0A,
 }
 
 export const CATEGORY_DECODE: Record<number, Category> = {
@@ -20,6 +21,7 @@ export const CATEGORY_DECODE: Record<number, Category> = {
   0x06: 'landslide',
   0x07: 'gas_leak',
   0x08: 'danger',
+  0x0A: 'injured',
 }
 
 // ┌──────┬─────┬──────────┬─────┬─────────┬──────────┬──────────┬──────────┐

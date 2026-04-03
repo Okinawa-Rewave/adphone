@@ -9,24 +9,17 @@
         body { margin: 0; padding: 0; }
         #map { width: 100%; height: 100vh; background: #f0f0f0; }
         .dot-icon { display: flex; justify-content: center; align-items: center; }
-        .dot {
-            border: 3px solid white;
-            border-radius: 50%;
-            box-shadow: 0 0 6px rgba(0,0,0,0.4);
-        }
-        .dot-sm  { width: 14px; height: 14px; }
-        .dot-md  { width: 20px; height: 20px; }
-        .bg-blue   { background-color: #007AFF; }
-        .bg-green  { background-color: #16A34A; }  /* 避難所: 緑 */
-        .bg-teal   { background-color: #0D9488; }  /* 目的地: teal */
-
-        /* 避難所ポップアップ */
+        .dot { border: 3px solid white; border-radius: 50%; box-shadow: 0 0 6px rgba(0,0,0,0.4); }
+        .dot-sm { width: 14px; height: 14px; }
+        .dot-md { width: 20px; height: 20px; }
+        .bg-blue  { background-color: #007AFF; }
+        .bg-green { background-color: #16A34A; }
+        .bg-teal  { background-color: #0D9488; }
         .shelter-popup { font-weight: bold; color: #16A34A; }
     </style>
 </head>
 <body>
     <div id="map"></div>
-
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         var map = L.map('map', { zoomControl: false }).setView([26.5915, 127.9775], 14);
@@ -41,6 +34,7 @@
         var shelterMarkers    = [];
         var destinationMarker = null;
         var disasterMarkers   = [];
+        var injuredMarkers    = [];
 
         // ── カテゴリ別カラー ──────────────────────────
         var CATEGORY_COLOR = {
@@ -52,6 +46,7 @@
             landslide:         '#92400E',
             road_block:        '#64748B',
             danger:            '#DB2777',
+            injured:           '#F97316',  // オレンジ
         };
 
         var CATEGORY_LABEL = {
@@ -63,7 +58,13 @@
             landslide:         '⛰️ 土砂崩れ',
             road_block:        '🚧 道路閉鎖',
             danger:            '⚠️ その他危険',
+            injured:           '🚑 けが人',
         };
+
+        // ── 表示フィルタの状態 ──────────────────────
+        var showDisasters = true;
+        var showShelters  = true;
+        var showInjured   = true;
 
         // ── Haversine距離計算（メートル）──────────────
         function haversineM(lat1, lng1, lat2, lng2) {
@@ -80,20 +81,34 @@
 
         // ── 外接円の半径を計算（メートル）──────────────
         function calcEnclosingRadius(witnessCoords, centerLat, centerLng) {
-            var MIN_RADIUS = 50;   // 最小半径50m（見やすく）
-            var MAX_RADIUS = 500;  // 最大半径500m
-
-            if (!witnessCoords || witnessCoords.length <= 1) {
-                return MIN_RADIUS;
-            }
-
+            var MIN_RADIUS = 50;
+            var MAX_RADIUS = 500;
+            if (!witnessCoords || witnessCoords.length <= 1) return MIN_RADIUS;
             var maxDist = 0;
             witnessCoords.forEach(function(w) {
                 var d = haversineM(centerLat, centerLng, w.lat, w.lng);
                 if (d > maxDist) maxDist = d;
             });
-
             return Math.max(MIN_RADIUS, Math.min(maxDist, MAX_RADIUS));
+        }
+
+        // ── マーカーの表示・非表示を切り替える ─────────
+        function applyFilter() {
+            // 災害マーカー
+            disasterMarkers.forEach(function(m) {
+                if (showDisasters) map.addLayer(m);
+                else map.removeLayer(m);
+            });
+            // 避難所マーカー
+            shelterMarkers.forEach(function(m) {
+                if (showShelters) map.addLayer(m);
+                else map.removeLayer(m);
+            });
+            // けが人マーカー
+            injuredMarkers.forEach(function(m) {
+                if (showInjured) map.addLayer(m);
+                else map.removeLayer(m);
+            });
         }
 
         // 地図タップ
@@ -121,8 +136,7 @@
                         var icon = L.divIcon({
                             className: 'dot-icon',
                             html: '<div class="dot dot-md bg-blue"></div>',
-                            iconSize: [24, 24],
-                            iconAnchor: [12, 12],
+                            iconSize: [24, 24], iconAnchor: [12, 12],
                         });
                         if (userMarkers[u.id]) userMarkers[u.id].setLatLng([u.lat, u.lng]);
                         else userMarkers[u.id] = L.marker([u.lat, u.lng], { icon: icon }).addTo(map);
@@ -137,12 +151,11 @@
                         var icon = L.divIcon({
                             className: 'dot-icon',
                             html: '<div class="dot dot-md bg-green"></div>',
-                            iconSize: [24, 24],
-                            iconAnchor: [12, 12],
+                            iconSize: [24, 24], iconAnchor: [12, 12],
                         });
                         var m = L.marker([s.lat, s.lng], { icon: icon })
-                            .addTo(map)
                             .bindPopup('<span class="shelter-popup">🏫 避難所: ' + s.name + '</span>');
+                        if (showShelters) m.addTo(map);
                         m.on('click', function() {
                             var tapMsg = JSON.stringify({ type: 'shelterTap', lat: s.lat, lng: s.lng, name: s.name });
                             if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(tapMsg);
@@ -154,15 +167,11 @@
                 // --- 目的地ピンの更新 ---
                 if (message.type === 'updateDestinationPin') {
                     if (destinationMarker) map.removeLayer(destinationMarker);
-                    if (message.isShelter) {
-                        destinationMarker = null;
-                        return;
-                    }
+                    if (message.isShelter) { destinationMarker = null; return; }
                     var icon = L.divIcon({
                         className: 'dot-icon',
                         html: '<div class="dot dot-md bg-teal"></div>',
-                        iconSize: [24, 24],
-                        iconAnchor: [12, 12],
+                        iconSize: [24, 24], iconAnchor: [12, 12],
                     });
                     destinationMarker = L.marker([message.lat, message.lng], { icon: icon }).addTo(map);
                 }
@@ -170,7 +179,9 @@
                 // --- 災害マーカーの更新 ---
                 if (message.type === 'updateDisasters') {
                     disasterMarkers.forEach(function(m) { map.removeLayer(m); });
+                    injuredMarkers.forEach(function(m) { map.removeLayer(m); });
                     disasterMarkers = [];
+                    injuredMarkers  = [];
 
                     message.events.forEach(function(e) {
                         var color    = CATEGORY_COLOR[e.category] || '#DB2777';
@@ -187,30 +198,46 @@
                             (note ? '<i>' + note + '</i><br/>' : '') +
                             'score: ' + e.score.toFixed(1);
 
-                        // 目撃者の座標から外接円の半径を計算
                         var radiusM = calcEnclosingRadius(e.witnessCoords, e.lat, e.lng);
 
-                        // 外接円（薄い塗り・見やすく）
+                        var isInjured = e.category === 'injured';
+
+                        // 外接円
                         var circle = L.circle([e.lat, e.lng], {
                             radius:      radiusM,
                             color:       color,
                             fillColor:   color,
                             fillOpacity: 0.2,
                             weight:      2.5,
-                        }).addTo(map).bindPopup(popup);
+                        }).bindPopup(popup);
 
-                        // 中心点（濃い点）
+                        // 中心点
                         var centerDot = L.circleMarker([e.lat, e.lng], {
                             radius:      8,
                             color:       'white',
                             fillColor:   color,
                             fillOpacity: 1.0,
                             weight:      2,
-                        }).addTo(map).bindPopup(popup);
+                        }).bindPopup(popup);
 
-                        disasterMarkers.push(circle);
-                        disasterMarkers.push(centerDot);
+                        if (isInjured) {
+                            if (showInjured) { circle.addTo(map); centerDot.addTo(map); }
+                            injuredMarkers.push(circle);
+                            injuredMarkers.push(centerDot);
+                        } else {
+                            if (showDisasters) { circle.addTo(map); centerDot.addTo(map); }
+                            disasterMarkers.push(circle);
+                            disasterMarkers.push(centerDot);
+                        }
                     });
+                }
+
+                // --- フィルタ切り替え ---
+                if (message.type === 'setFilter') {
+                    if (message.key === 'disasters') showDisasters = message.value;
+                    if (message.key === 'shelters')  showShelters  = message.value;
+                    if (message.key === 'injured')   showInjured   = message.value;
+                    applyFilter();
                 }
 
                 // --- 現在地に戻る ---
