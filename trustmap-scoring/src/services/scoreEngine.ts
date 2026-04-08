@@ -2,24 +2,12 @@ import type { RawPacket }   from '../types/RawPacket'
 import type { ScoredEvent } from '../types/ScoredEvent'
 import { cluster }          from './clusterEngine'
 import { decay }            from '../utils/decay'
-
-const OFFICIAL_WEIGHT = 5.0
-const NORMAL_WEIGHT   = 1.0
-
-function issuerWeight(issuerType: number): number {
-  return issuerType === 1 ? OFFICIAL_WEIGHT : NORMAL_WEIGHT
-}
+import { UserTrustDB }      from './userTrustDB'
 
 export function toStars(score: number): 1 | 2 | 3 {
   if (score >= 50) return 3
   if (score >= 10) return 2
   return 1
-}
-
-function calcClusterScore(packets: RawPacket[]): number {
-  return packets.reduce((sum, p) => {
-    return sum + decay(p.timestamp) * issuerWeight(p.issuerType)
-  }, 0)
 }
 
 function aggregate(packets: RawPacket[]): { lat: number; lng: number; severity: number } {
@@ -31,10 +19,20 @@ function aggregate(packets: RawPacket[]): { lat: number; lng: number; severity: 
   }
 }
 
+// ── スコア計算 ────────────────────────────────────
+// Score = Σ( decay(t) × userTrust(pubkey) )
+function calcClusterScore(packets: RawPacket[], trustDB: UserTrustDB): number {
+  return packets.reduce((sum, p) => {
+    const trust = trustDB.getScore(p.pubkey, p.issuerType)
+    return sum + decay(p.timestamp) * trust
+  }, 0)
+}
+
 export function computeScores(
   allPackets: RawPacket[],
   _myLat:    number,
-  _myLng:    number
+  _myLng:    number,
+  trustDB:   UserTrustDB,
 ): ScoredEvent[] {
   if (allPackets.length === 0) return []
 
@@ -42,7 +40,7 @@ export function computeScores(
 
   return clusters
     .map((c) => {
-      const score       = calcClusterScore(c.packets)
+      const score       = calcClusterScore(c.packets, trustDB)
       const agg         = aggregate(c.packets)
       const hasOfficial = c.packets.some(p => p.issuerType === 1)
 
