@@ -619,7 +619,7 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     position: 'absolute',
-    bottom: 12,
+    bottom: 80,
     left: 20,
     right: 20,
     backgroundColor: Design.colors.background,

@@ -1,24 +1,24 @@
 // app/index.tsx
 import { AppHeader } from "@/components/AppHeader";
 import { BrowserHeader } from "@/components/BrowserHeader";
-import { Design } from "@/constants/Design";
 import { MobileFrame } from '@/components/MobileFrame';
 import { NavButton } from '@/components/NavButton';
+import { Design } from "@/constants/Design";
 import { useNotifications } from '@/contexts/NotificationContext';
+import { Link, useRouter } from 'expo-router';
 import {
   Bell,
+  BookOpen,
   Bot,
   Camera,
   Map as MapIcon,
   MessageSquare,
-  Settings,
-  Phone,
   Package,
-  BookOpen,
+  Phone,
+  Settings,
 } from 'lucide-react-native';
 import React, { useRef, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, View, TouchableOpacity, Linking } from 'react-native';
-import { Link, useRouter } from 'expo-router';
+import { Dimensions, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 
 
