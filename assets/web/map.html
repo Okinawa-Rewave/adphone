@@ -682,54 +682,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
         .bg-green { background-color: #16A34A; }
         .bg-teal  { background-color: #0D9488; }
         .shelter-popup { font-weight: bold; color: #16A34A; }
-
-        /* オフライン保存UI */
-        #offlineBar {
-            position: fixed;
-            bottom: 0; left: 0; right: 0;
-            background: rgba(30,30,30,0.88);
-            color: #fff;
-            font-size: 13px;
-            padding: 8px 14px;
-            display: none;
-            align-items: center;
-            gap: 8px;
-            z-index: 9999;
-            flex-wrap: wrap;
-        }
-        #offlineBar button {
-            background: #007AFF;
-            color: #fff;
-            border: none;
-            border-radius: 6px;
-            padding: 4px 12px;
-            font-size: 13px;
-            cursor: pointer;
-        }
-        #offlineBar button:disabled { background: #555; cursor: default; }
-        #offlineMsg { flex: 1; }
-        #storageBadge {
-            background: #22c55e;
-            color: #fff;
-            border-radius: 12px;
-            padding: 2px 10px;
-            font-size: 12px;
-            font-weight: bold;
-            display: none;
-            white-space: nowrap;
-        }
     </style>
 </head>
 <body>
     <div id="map"></div>
-
-    <!-- オフライン保存バー（WebView内で表示） -->
-    <div id="offlineBar">
-        <span id="offlineMsg">このエリアのマップをオフライン保存できます</span>
-        <span id="storageBadge"></span>
-        <button id="saveBtn" onclick="startSave()">保存</button>
-        <button onclick="document.getElementById('offlineBar').style.display='none'">✕</button>
-    </div>
 
     <!-- ===== idb (inlined) ===== -->
     <script>
@@ -1243,81 +1199,52 @@ svg.leaflet-image-layer.leaflet-interactive path {
             subdomains: ['a','b','c'],
         }).addTo(map);
 
-        // ── 保存コントロール ────────────────────────────────
-        var saveControl = LeafletOffline.savetiles(tileLayer, {
-            zoomlevels: [11, 12, 13, 14, 15, 16],
-            maxZoom: 16,
-            confirm: function(layer, successCallback) {
-                var n = layer._tilesforSave.length;
-                document.getElementById('offlineMsg').textContent =
-                    n + ' 枚のタイルを保存します...';
-                document.getElementById('saveBtn').disabled = true;
-                successCallback();
-            },
-            confirmRemoval: function(layer, successCallback) {
-                successCallback();
-            },
-            saveText: '💾',
-            rmText: '🗑️',
-        });
-        saveControl.addTo(map);
+        // ── 自動オフライン保存 ──────────────────────────
+        // 地図を動かすたびに現在表示中のズームレベルを自動保存する
 
-        // タイル保存の進捗
-        var totalTiles = 0;
-        tileLayer.on('savestart', function(e) {
-            totalTiles = e.lengthToBeSaved;
-            document.getElementById('offlineMsg').textContent =
-                '保存中... 0 / ' + totalTiles;
-        });
-        tileLayer.on('savetileend', function(e) {
-            document.getElementById('offlineMsg').textContent =
-                '保存中... ' + e.lengthSaved + ' / ' + totalTiles;
-        });
-        tileLayer.on('loadend', function(e) {
-            setTimeout(function() { checkOfflineBar(); }, 500);
-        });
-        tileLayer.on('tilesremoved', function() {
-            document.getElementById('offlineMsg').textContent = 'キャッシュを削除しました';
-        });
+        var _autoSaving = false;
 
-        function startSave() {
-            saveControl._saveTiles();
-        }
+        async function autoSaveTiles() {
+            if (_autoSaving) return;
+            _autoSaving = true;
+            try {
+                var zoom   = map.getZoom();
+                var bounds = map.getBounds();
+                var area   = L.bounds(
+                    map.project(bounds.getNorthWest(), zoom),
+                    map.project(bounds.getSouthEast(), zoom)
+                );
+                var tiles = tileLayer.getTileUrls(area, zoom);
 
-        // ネットワーク状態に応じてバーを表示
-        async function checkOfflineBar() {
-            var count = 0;
-            try { count = await LeafletOffline.getStorageLength(); } catch(e) {}
-            var bar   = document.getElementById('offlineBar');
-            var msg   = document.getElementById('offlineMsg');
-            var badge = document.getElementById('storageBadge');
-            var btn   = document.getElementById('saveBtn');
-
-            bar.style.display = 'flex';
-
-            if (count > 0) {
-                badge.textContent   = '💾 ' + count + '枚保存済み';
-                badge.style.display = 'inline-block';
-            } else {
-                badge.style.display = 'none';
-            }
-
-            if (!navigator.onLine) {
-                msg.textContent   = '📴 オフラインモード（キャッシュから表示中）';
-                btn.style.display = 'none';
-            } else {
-                msg.textContent   = count > 0
-                    ? '再保存して最新に更新できます'
-                    : 'このエリアのマップをオフライン保存できます';
-                btn.style.display = '';
-                btn.disabled      = false;
+                for (var i = 0; i < tiles.length; i++) {
+                    var tile = tiles[i];
+                    // すでに保存済みならスキップ
+                    var already = await LeafletOffline.hasTile(tile.key);
+                    if (!already) {
+                        try {
+                            var blob = await LeafletOffline.downloadTile(tile.url);
+                            await LeafletOffline.saveTile(tile, blob);
+                        } catch(e) {
+                            // ネットワークエラーは無視して次へ
+                        }
+                    }
+                }
+            } catch(e) {
+                console.warn('autoSave error:', e);
+            } finally {
+                _autoSaving = false;
             }
         }
-        window.addEventListener('online',  checkOfflineBar);
-        window.addEventListener('offline', checkOfflineBar);
-        // 初回表示（3秒後）
-        setTimeout(checkOfflineBar, 3000);
 
+        // 地図の移動・ズーム後に自動保存（moveendは移動完了後に1回だけ発火）
+        map.on('moveend', function() {
+            if (navigator.onLine) autoSaveTiles();
+        });
+
+        // 初回表示時も保存
+        map.whenReady(function() {
+            if (navigator.onLine) setTimeout(autoSaveTiles, 1000);
+        });
         // ── 以下は既存コードそのまま ──────────────────────────
 
         var routeLayer        = null;
