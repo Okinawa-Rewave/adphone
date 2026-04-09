@@ -415,6 +415,7 @@ export default function App() {
           ref={webViewRef}
           style={styles.webview}
           source={require('../../assets/web/map.html')}
+          originWhitelist={['*']}
           showsVerticalScrollIndicator={false}
           onLoadEnd={() => {
             setWebReady(true);
@@ -430,6 +431,8 @@ export default function App() {
           onMessage={onMessage}
           javaScriptEnabled
           allowFileAccess
+          allowUniversalAccessFromFileURLs
+          mixedContentMode="always"
         />
 
         {isRouting && (

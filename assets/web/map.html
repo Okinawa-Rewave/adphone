@@ -1245,7 +1245,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
         // ── 保存コントロール ────────────────────────────────
         var saveControl = LeafletOffline.savetiles(tileLayer, {
-            zoomlevels: [12, 13, 14, 15, 16],
+            zoomlevels: [11, 12, 13, 14, 15, 16],
             maxZoom: 16,
             confirm: function(layer, successCallback) {
                 var n = layer._tilesforSave.length;
@@ -1470,7 +1470,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
                         var popup =
                             '<b>' + stars + ' ' + label + '</b><br/>' +
                             official +
-                            '深刻度: ' + e.severity.toFixed(1) + ' / 5<br/>' +
                             '目撃数: ' + e.witnessCount + ' 件<br/>' +
                             (note ? '<i>' + note + '</i><br/>' : '') +
                             'score: ' + e.score.toFixed(1);

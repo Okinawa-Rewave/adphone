@@ -1,0 +1,7 @@
+# EAS Buildに送信しないファイル
+node_modules/
+android/
+ios/
+.expo/
+*.jks
+*.keystore
