@@ -1222,9 +1222,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
     </script>
 
     <script>
-        // ── Step 1: 標準タイルレイヤー + 手動保存 ──────────────
-        // オンライン表示は素の L.tileLayer で行う（安定・シンプル）
-        // 手動保存ボタン押下時のみ IndexedDB にキャッシュする
+        // ── タイルレイヤー設定 ────────────────────────────────
+        // tileLayerOffline を使用: オンライン時はOSMから取得、オフライン時はIndexedDBにフォールバック
+        // 自動保存: GPS取得時に周辺エリアを自動ダウンロード（preDownloadArea）
+        // 手動保存: saveCurrentView ボタンで現在ビューを追加保存可能
 
         var TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
         var TILE_OPTS = {
@@ -1315,14 +1316,22 @@ svg.leaflet-image-layer.leaflet-interactive path {
             if (btn) btn.disabled = !enableBtn;
         }
 
-        // ── GPS取得時の自動ダウンロード ──────────────────────────
-        // 初回のユーザー位置受信時に周辺タイルをまとめてキャッシュする
-        var _preDownloaded = false;
+        // ── 自動ダウンロード ─────────────────────────────────────
+        // マップ準備完了時 + GPS取得時に周辺タイルをキャッシュする
+        // すでにダウンロード済みのエリア内（DELTA以内）ならスキップ
+        var _downloadedCenterLat = null;
+        var _downloadedCenterLng = null;
 
         async function preDownloadArea(centerLat, centerLng) {
-            if (_preDownloaded || !navigator.onLine) return;
-            _preDownloaded = true;
-            var DELTA    = 0.05; // 約±5km
+            if (!navigator.onLine) return;
+            var DELTA = 0.05;
+            if (_downloadedCenterLat !== null) {
+                var dLat = centerLat - _downloadedCenterLat;
+                var dLng = centerLng - _downloadedCenterLng;
+                if (Math.sqrt(dLat * dLat + dLng * dLng) < DELTA) return;
+            }
+            _downloadedCenterLat = centerLat;
+            _downloadedCenterLng = centerLng;
             var MIN_ZOOM = 13;
             var MAX_ZOOM = 16;
             var latlngBounds = L.latLngBounds(
@@ -1346,6 +1355,14 @@ svg.leaflet-image-layer.leaflet-interactive path {
                 }
             }
         }
+
+        // マップ準備完了時にデフォルト中心でダウンロード開始（GPS不要）
+        map.whenReady(function() {
+            if (navigator.onLine) {
+                var c = map.getCenter();
+                preDownloadArea(c.lat, c.lng);
+            }
+        });
 
         // ── 以下は既存コードそのまま ──────────────────────────
 
@@ -1441,7 +1458,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
                 }
 
                 if (message.type === 'updateUsers') {
-                    if (!_preDownloaded && message.users.length > 0) {
+                    if (message.users.length > 0) {
                         preDownloadArea(message.users[0].lat, message.users[0].lng);
                     }
                     message.users.forEach(function(u) {
