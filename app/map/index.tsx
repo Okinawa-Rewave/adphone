@@ -198,8 +198,9 @@ export default function App() {
     return turf.point(nearest);
   }
 
-  // ── GPS取得 ──────────────────────────────────────
+  // ── GPS継続追跡 ──────────────────────────────────
   useEffect(() => {
+    let sub: Location.LocationSubscription | null = null;
     (async () => {
       try {
         setLocLoading(true);
@@ -210,16 +211,19 @@ export default function App() {
           setLocLoading(false);
           return;
         }
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        setUserPos({ id: SELF_ID, lat: loc.coords.latitude, lng: loc.coords.longitude });
+        sub = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, distanceInterval: 50 },
+          (loc) => {
+            setLocLoading(false);
+            setUserPos({ id: SELF_ID, lat: loc.coords.latitude, lng: loc.coords.longitude });
+          }
+        );
       } catch (e: any) {
         setLocError(String(e?.message ?? e));
-      } finally {
         setLocLoading(false);
       }
     })();
+    return () => { sub?.remove(); };
   }, []);
 
   // ── 道路ネットワーク初期化 ──────────────────────
