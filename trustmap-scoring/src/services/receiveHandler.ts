@@ -15,7 +15,7 @@ export async function handleReceive(
 ): Promise<ReceiveResult> {
 
   // 1. 重複チェック
-  if (db.has(packet.id)) return 'duplicate'
+  if (db.isDuplicate(packet.id)) return 'duplicate'
 
   // 2. 外れ値チェック
   if (checkOutlier(packet) !== 'ok') return 'outlier'

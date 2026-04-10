@@ -1,4 +1,5 @@
 import { LocalDB }         from './services/localDB'
+import { UserTrustDB }     from './services/userTrustDB'
 import { handleReceive, ReceiveResult }   from './services/receiveHandler'
 import { computeScores }   from './services/scoreEngine'
 import type { RawPacket }  from './types/RawPacket'
@@ -7,6 +8,7 @@ import type { VerifyFn }   from './types/ExternalFns'
 
 export class TrustMapEngine {
   private db       = new LocalDB()
+  private trustDB  = new UserTrustDB()
   private verifyFn: VerifyFn
 
   constructor(verifyFn: VerifyFn) {
@@ -15,7 +17,7 @@ export class TrustMapEngine {
 
   // LoRaでパケットを受信したときに呼ぶ
   async onReceive(packet: RawPacket): Promise<ReceiveResult> {
-    return handleReceive(packet, this.db, this.verifyFn)
+    return handleReceive(packet, this.verifyFn, this.db, this.trustDB)
   }
 
   // 自分の観測を記録してブロードキャスト用パケットを返す
