@@ -682,10 +682,45 @@ svg.leaflet-image-layer.leaflet-interactive path {
         .bg-green { background-color: #16A34A; }
         .bg-teal  { background-color: #0D9488; }
         .shelter-popup { font-weight: bold; color: #16A34A; }
+
+        /* ── Step1: 手動保存バー ── */
+        #saveBar {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: rgba(20, 20, 20, 0.88);
+            color: #fff;
+            font-size: 13px;
+            padding: 8px 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 9999;
+        }
+        #saveBar button {
+            background: #007AFF;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 5px 14px;
+            font-size: 13px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        #saveBar button:disabled {
+            background: #555;
+            cursor: default;
+        }
+        #saveMsg { flex: 1; }
     </style>
 </head>
 <body>
     <div id="map"></div>
+
+    <!-- Step1: 手動保存バー -->
+    <div id="saveBar">
+        <span id="saveMsg">このエリアのタイルをオフライン保存</span>
+        <button id="saveBtn" onclick="saveCurrentView()">💾 保存</button>
+    </div>
 
     <!-- ===== idb (inlined) ===== -->
     <script>
@@ -1187,26 +1222,37 @@ svg.leaflet-image-layer.leaflet-interactive path {
     </script>
 
     <script>
-        // ── tileLayerOffline セットアップ ──────────────────────
-        var tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+        // ── Step 1: 標準タイルレイヤー + 手動保存 ──────────────
+        // オンライン表示は素の L.tileLayer で行う（安定・シンプル）
+        // 手動保存ボタン押下時のみ IndexedDB にキャッシュする
+
+        var TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+        var TILE_OPTS = {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            maxZoom: 19,
+            subdomains: ['a', 'b', 'c'],
+        };
 
         var map = L.map('map', { zoomControl: false }).setView([26.5915, 127.9775], 14);
 
-        // オフライン対応タイルレイヤー
-        var tileLayer = LeafletOffline.tileLayerOffline(tileUrl, {
-            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-            maxZoom: 19,
-            subdomains: ['a','b','c'],
-        }).addTo(map);
+        // 通常のタイルレイヤー（オンライン時は常にこれが描画する）
+        L.tileLayer(TILE_URL, TILE_OPTS).addTo(map);
 
-        // ── 自動オフライン保存 ──────────────────────────
-        // 地図を動かすたびに現在表示中のズームレベルを自動保存する
+        // ── 手動保存ロジック ──────────────────────────────
+        // LeafletOffline の getTileUrls / downloadTile / saveTile を
+        // ボタン押下時だけ呼ぶ。表示とは完全に分離している。
 
-        var _autoSaving = false;
+        var _saving = false;
 
-        async function autoSaveTiles() {
-            if (_autoSaving) return;
-            _autoSaving = true;
+        async function saveCurrentView() {
+            if (_saving) return;
+            if (!navigator.onLine) {
+                updateSaveUI('オフラインのため保存できません', false);
+                return;
+            }
+            _saving = true;
+            updateSaveUI('計算中...', false);
+
             try {
                 var zoom   = map.getZoom();
                 var bounds = map.getBounds();
@@ -1214,37 +1260,59 @@ svg.leaflet-image-layer.leaflet-interactive path {
                     map.project(bounds.getNorthWest(), zoom),
                     map.project(bounds.getSouthEast(), zoom)
                 );
-                var tiles = tileLayer.getTileUrls(area, zoom);
 
+                // leaflet.offline の getTileUrls を使うため一時レイヤーを作成
+                var tmpLayer = LeafletOffline.tileLayerOffline(TILE_URL, TILE_OPTS);
+                var tiles = tmpLayer.getTileUrls(area, zoom);
+
+                // 未保存タイルだけに絞る
+                var unsaved = [];
                 for (var i = 0; i < tiles.length; i++) {
-                    var tile = tiles[i];
-                    // すでに保存済みならスキップ
-                    var already = await LeafletOffline.hasTile(tile.key);
-                    if (!already) {
-                        try {
-                            var blob = await LeafletOffline.downloadTile(tile.url);
-                            await LeafletOffline.saveTile(tile, blob);
-                        } catch(e) {
-                            // ネットワークエラーは無視して次へ
-                        }
+                    if (!(await LeafletOffline.hasTile(tiles[i].key))) {
+                        unsaved.push(tiles[i]);
                     }
                 }
+
+                if (unsaved.length === 0) {
+                    updateSaveUI('✅ このエリアは保存済みです', true);
+                    _saving = false;
+                    return;
+                }
+
+                updateSaveUI('保存中: 0 / ' + unsaved.length, false);
+
+                var saved = 0;
+                var failed = 0;
+                for (var j = 0; j < unsaved.length; j++) {
+                    try {
+                        var blob = await LeafletOffline.downloadTile(unsaved[j].url);
+                        await LeafletOffline.saveTile(unsaved[j], blob);
+                        saved++;
+                    } catch(e) {
+                        failed++;
+                    }
+                    updateSaveUI('保存中: ' + (saved + failed) + ' / ' + unsaved.length, false);
+                }
+
+                var msg = '✅ ' + saved + ' 枚を保存しました';
+                if (failed > 0) msg += ' (' + failed + ' 枚失敗)';
+                updateSaveUI(msg, true);
+
             } catch(e) {
-                console.warn('autoSave error:', e);
+                console.warn('saveCurrentView error:', e);
+                updateSaveUI('保存に失敗しました', true);
             } finally {
-                _autoSaving = false;
+                _saving = false;
             }
         }
 
-        // 地図の移動・ズーム後に自動保存（moveendは移動完了後に1回だけ発火）
-        map.on('moveend', function() {
-            if (navigator.onLine) autoSaveTiles();
-        });
+        function updateSaveUI(msg, enableBtn) {
+            var el = document.getElementById('saveMsg');
+            var btn = document.getElementById('saveBtn');
+            if (el)  el.textContent = msg;
+            if (btn) btn.disabled = !enableBtn;
+        }
 
-        // 初回表示時も保存
-        map.whenReady(function() {
-            if (navigator.onLine) setTimeout(autoSaveTiles, 1000);
-        });
         // ── 以下は既存コードそのまま ──────────────────────────
 
         var routeLayer        = null;
