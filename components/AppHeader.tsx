@@ -4,26 +4,18 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { ArrowLeft } from "lucide-react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Design } from "@/constants/Design";
 
 type AppHeaderProps = {
-  /** メインタイトル */
   title: string;
-
-  /** サブタイトル（任意） */
   subtitle?: string;
-
-  /** 戻るボタンを表示するか */
   showBack?: boolean;
-
-  /** 右側に配置するアクション */
   rightAction?: React.ReactNode;
-
-  /** 高さを変えたい場合（タブレットなど） */
+  /** 2段ヘッダー時は false（BrowserHeader 下）。standalone 時は true */
+  noTopInset?: boolean;
   height?: number;
 };
 
@@ -32,49 +24,38 @@ export function AppHeader({
   subtitle,
   showBack = true,
   rightAction,
-  height = 56,
+  noTopInset = true,
+  height = 60,
 }: AppHeaderProps) {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
 
   return (
-    <View
-      style={[
-        styles.wrapper,
-        {
-          paddingTop: insets.top,
-          height: height + insets.top,
-        },
-      ]}
-    >
+    <View style={[styles.wrapper, { minHeight: height }]}>
       <View style={styles.header}>
-        {/* 左：戻る */}
         <View style={styles.left}>
           {showBack && (
             <TouchableOpacity
               style={styles.backButton}
               onPress={() => router.back()}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <ArrowLeft size={20} color="#111827" />
+              <ArrowLeft size={22} color={Design.colors.text} />
               <Text style={styles.backText}>戻る</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* 中央：タイトル */}
         <View style={styles.center}>
           <Text style={styles.title} numberOfLines={1}>
             {title}
           </Text>
-          {subtitle && (
+          {subtitle ? (
             <Text style={styles.subtitle} numberOfLines={1}>
               {subtitle}
             </Text>
-          )}
+          ) : null}
         </View>
 
-        {/* 右：アクション */}
         <View style={styles.right}>{rightAction}</View>
       </View>
     </View>
@@ -83,53 +64,50 @@ export function AppHeader({
 
 const styles = StyleSheet.create({
   wrapper: {
-    backgroundColor: "#f9fafb",
+    backgroundColor: Design.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
+    borderBottomColor: Design.colors.border,
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.sm,
   },
-
   header: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
   },
-
   left: {
-    width: 80,
+    minWidth: 88,
     justifyContent: "center",
   },
-
   backButton: {
     flexDirection: "row",
     alignItems: "center",
+    paddingVertical: Design.spacing.xs,
+    paddingRight: Design.spacing.xs,
   },
-
   backText: {
-    marginLeft: 4,
-    fontSize: 14,
-    color: "#4b5563",
+    marginLeft: Design.spacing.xs,
+    fontSize: Design.fontSize.body,
+    fontWeight: Design.fontWeight.semi,
+    color: Design.colors.textSecondary,
   },
-
   center: {
     flex: 1,
     alignItems: "center",
+    justifyContent: "center",
   },
-
   title: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
+    fontSize: Design.fontSize.title,
+    fontWeight: Design.fontWeight.bold,
+    color: Design.colors.text,
   },
-
   subtitle: {
     marginTop: 2,
-    fontSize: 12,
-    color: "#6b7280",
+    fontSize: Design.fontSize.body,
+    color: Design.colors.textSecondary,
   },
-
   right: {
-    width: 80,
+    minWidth: 88,
     alignItems: "flex-end",
     justifyContent: "center",
   },

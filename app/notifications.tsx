@@ -1,156 +1,155 @@
-// app/notifications.tsx
-import React, { useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from "react-native";
-import { router } from "expo-router";
-import { MobileFrame } from "@/components/MobileFrame";
-import { ArrowLeft, Check } from "lucide-react-native";
-import { BrowserHeader } from "@/components/BrowserHeader";
+// app/notifications.tsx — タイムライン表示（rewaveベース）
+import React, { useMemo } from "react";
+import { ScrollView, View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { useRouter } from "expo-router";
+import { Check } from "lucide-react-native";
+import { Design } from "@/constants/Design";
+import { ScreenLayout } from "@/components/ScreenLayout";
+import { PostCard } from "@/components/PostCard";
+import { useNotifications } from "@/contexts/NotificationContext";
+import type { NotificationItem } from "@/contexts/NotificationContext";
 
+type Group = { label: string; items: NotificationItem[] };
 
-type NotificationItem = {
-  id: string;
-  text: string;
-  time: string;      // "12:34" みたいな表示用
-  unread: boolean;
-};
+function groupByTime(items: NotificationItem[]): Group[] {
+  const now = Date.now();
+  const groups: Group[] = [
+    { label: "直近15分",   items: [] },
+    { label: "1時間以内",  items: [] },
+    { label: "1時間以上前",items: [] },
+  ];
 
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  { id: "n1", text: "◯◯さんからメッセージを受信しました", time: "12:01", unread: true },
-  { id: "n2", text: "××にメッセージを送信しました", time: "11:48", unread: false },
-  { id: "n3", text: "ネットワークに接続しました", time: "11:20", unread: true },
-  { id: "n4", text: "オフラインになりました", time: "10:55", unread: false },
-];
+  for (const item of items) {
+    const ts = item.timestamp ?? now;
+    const diff = (now - ts) / 60000;
+    if (diff < 15)    groups[0].items.push(item);
+    else if (diff < 60) groups[1].items.push(item);
+    else              groups[2].items.push(item);
+  }
+  return groups.filter((g) => g.items.length > 0);
+}
 
 export default function NotificationsScreen() {
-  const [items, setItems] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+  const router = useRouter();
+  const { items, unreadCount, markAllRead, markRead, signPost, toggleHelpful } = useNotifications();
+  const groups = useMemo(() => groupByTime(items), [items]);
 
-  const unreadCount = useMemo(
-    () => items.filter((x) => x.unread).length,
-    [items]
-  );
-
-  const markAllRead = () => {
-    setItems((prev) => prev.map((x) => ({ ...x, unread: false })));
-  };
-
-  const toggleRead = (id: string) => {
-    setItems((prev) =>
-      prev.map((x) => (x.id === id ? { ...x, unread: !x.unread } : x))
-    );
+  const handlePress = (id: string, href?: string) => {
+    markRead(id);
+    if (href) router.push(href as any);
   };
 
   return (
-    <MobileFrame>
-      <View style={styles.container}>
-        {/* ヘッダー（Homeと同じトーン） */}
-        <BrowserHeader />
-        <View style={styles.header}>          
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft size={20} color="#111827" />
-            <Text style={styles.backText}>戻る</Text>
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.title}>通知</Text>
-            <Text style={styles.subtitle}>未読 {unreadCount} 件</Text>
+    <ScreenLayout
+      title="タイムライン"
+      subtitle={unreadCount > 0 ? `未読 ${unreadCount} 件` : undefined}
+      showBack={false}
+      showBottomTab
+      rightAction={
+        <TouchableOpacity
+          onPress={markAllRead}
+          style={styles.allReadBtn}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Check size={18} color={Design.colors.text} />
+          <Text style={styles.allReadText}>既読</Text>
+        </TouchableOpacity>
+      }
+      contentStyle={{ paddingHorizontal: 0, paddingTop: 0 }}
+    >
+      <ScrollView
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+      >
+        {groups.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>通知はありません</Text>
           </View>
-
-          <TouchableOpacity style={styles.actionButton} onPress={markAllRead}>
-            <Check size={18} color="#111827" />
-            <Text style={styles.actionText}>全て既読</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* 一覧 */}
-        <ScrollView contentContainerStyle={styles.list}>
-          {items.map((n) => (
-            <TouchableOpacity
-              key={n.id}
-              style={[styles.row, n.unread && styles.rowUnread]}
-              onPress={() => toggleRead(n.id)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.left}>
-                <Text style={styles.text} numberOfLines={2}>
-                  • {n.text}
-                </Text>
-                <Text style={styles.time}>{n.time}</Text>
+        ) : (
+          groups.map((group) => (
+            <View key={group.label} style={styles.group}>
+              {/* グループヘッダー */}
+              <View style={styles.groupHeader}>
+                <Text style={styles.groupLabel}>{group.label}</Text>
+                <View style={styles.groupBadge}>
+                  <Text style={styles.groupBadgeText}>{group.items.length}</Text>
+                </View>
               </View>
 
-              {/* 未読ドット */}
-              {n.unread ? <View style={styles.unreadDot} /> : <View style={styles.unreadDotHidden} />}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* 下部ヒント */}
-        <View style={styles.footerHint}>
-          <Text style={styles.footerText}>※通知をタップすると既読/未読を切り替えます</Text>
-        </View>
-      </View>
-    </MobileFrame>
+              {/* PostCardリスト */}
+              <View style={styles.groupItems}>
+                {group.items.map((item) => (
+                  <PostCard
+                    key={item.id}
+                    item={item}
+                    onPress={() => handlePress(item.id, item.href)}
+                    onSign={() => signPost(item.id)}
+                    onHelpful={() => toggleHelpful(item.id)}
+                  />
+                ))}
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </ScreenLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: "#f9fafb",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
+  list: {
+    paddingVertical: Design.spacing.md,
   },
-  backButton: { flexDirection: "row", alignItems: "center", paddingVertical: 4, paddingRight: 8 },
-  backText: { marginLeft: 4, fontSize: 14, color: "#4b5563" },
-
-  headerCenter: { flex: 1, alignItems: "center" },
-  title: { fontSize: 18, fontWeight: "700", color: "#111827" },
-  subtitle: { marginTop: 2, fontSize: 12, color: "#6b7280" },
-
-  actionButton: { flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 8, paddingVertical: 4 },
-  actionText: { fontSize: 12, color: "#111827", fontWeight: "600" },
-
-  list: { padding: 12, paddingBottom: 24 },
-
-  row: {
+  empty: {
+    paddingVertical: 48,
+    alignItems: "center",
+  },
+  emptyText: {
+    fontSize: Design.fontSize.body,
+    color: Design.colors.textMuted,
+    textAlign: "center",
+  },
+  group: {
+    marginBottom: Design.spacing.md,
+  },
+  groupHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#f3f4f6",          // Homeの通知エリアと近い色
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 10,
+    gap: Design.spacing.sm,
+    paddingHorizontal: Design.spacing.md,
+    paddingVertical: Design.spacing.sm,
+  },
+  groupLabel: {
+    fontSize: Design.fontSize.caption,
+    fontWeight: Design.fontWeight.bold,
+    color: Design.colors.textSecondary,
+  },
+  groupBadge: {
+    backgroundColor: Design.colors.surfaceElevated,
+    borderRadius: Design.radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: Design.colors.border,
   },
-  rowUnread: {
-    backgroundColor: "#eef2ff",
-    borderColor: "#c7d2fe",
+  groupBadgeText: {
+    fontSize: 11,
+    color: Design.colors.textMuted,
+    fontWeight: Design.fontWeight.semi,
   },
-
-  left: { flex: 1, paddingRight: 10 },
-  text: { fontSize: 16, color: "#6b7280" }, // Homeで大きくしたフォントに寄せた
-  time: { marginTop: 6, fontSize: 12, color: "#9ca3af" },
-
-  unreadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#ef4444" },
-  unreadDotHidden: { width: 10, height: 10, borderRadius: 5, backgroundColor: "transparent" },
-
-  footerHint: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
-    backgroundColor: "#fff",
+  groupItems: {
+    paddingHorizontal: Design.spacing.md,
   },
-  footerText: { fontSize: 12, color: "#9ca3af" },
+  allReadBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 4,
+    paddingLeft: Design.spacing.sm,
+  },
+  allReadText: {
+    fontSize: Design.fontSize.caption,
+    fontWeight: Design.fontWeight.semi,
+    color: Design.colors.text,
+  },
 });

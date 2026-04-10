@@ -1,32 +1,46 @@
-import { Link, Stack } from 'expo-router';
-import { StyleSheet } from 'react-native';
-
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+import { Link } from "expo-router";
+import React from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Design } from "@/constants/Design";
+import { ScreenLayout } from "@/components/ScreenLayout";
 
 export default function NotFoundScreen() {
   return (
-    <>
-      <Stack.Screen options={{ title: 'Oops!' }} />
-      <ThemedView style={styles.container}>
-        <ThemedText type="title">This screen does not exist.</ThemedText>
-        <Link href="/" style={styles.link}>
-          <ThemedText type="link">Go to home screen!</ThemedText>
+    <ScreenLayout title="ページが見つかりません">
+      <View style={styles.container}>
+        <Text style={styles.text}>お探しのページは存在しません。</Text>
+        <Link href="/" asChild>
+          <TouchableOpacity style={styles.link} activeOpacity={0.8}>
+            <Text style={styles.linkText}>ホームへ戻る</Text>
+          </TouchableOpacity>
         </Link>
-      </ThemedView>
-    </>
+      </View>
+    </ScreenLayout>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Design.spacing.lg,
+  },
+  text: {
+    fontSize: Design.fontSize.body,
+    color: Design.colors.textSecondary,
+    textAlign: "center",
   },
   link: {
-    marginTop: 15,
-    paddingVertical: 15,
+    marginTop: Design.spacing.xl,
+    paddingVertical: Design.spacing.lg,
+    paddingHorizontal: Design.spacing.xl,
+    backgroundColor: Design.colors.primary,
+    borderRadius: Design.radius.md,
+  },
+  linkText: {
+    fontSize: Design.fontSize.body,
+    fontWeight: Design.fontWeight.semi,
+    color: Design.colors.white,
   },
 });

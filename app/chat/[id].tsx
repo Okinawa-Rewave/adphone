@@ -10,12 +10,10 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { useLocalSearchParams, router } from "expo-router";
-import { MobileFrame } from "@/components/MobileFrame";
+import { useLocalSearchParams } from "expo-router";
 import { Send } from "lucide-react-native";
-import { BrowserHeader } from "@/components/BrowserHeader";
-import { AppHeader } from "@/components/AppHeader";
-
+import { Design } from "@/constants/Design";
+import { ScreenLayout } from "@/components/ScreenLayout";
 
 type ChatMessage = {
   id: string;
@@ -36,130 +34,172 @@ export default function ChatRoomScreen() {
   const handleSend = () => {
     const t = inputText.trim();
     if (!t) return;
-
     setMessages((prev) => [
       ...prev,
-      { id: Date.now().toString(), fromMe: true, text: t, time: new Date().toTimeString().slice(0, 5) },
+      {
+        id: Date.now().toString(),
+        fromMe: true,
+        text: t,
+        time: new Date().toTimeString().slice(0, 5),
+      },
     ]);
     setInputText("");
-
-    // TODO: ここで BLE/LoRa に送信（宛先は id を使う）
   };
 
   return (
-    <MobileFrame>
+    <ScreenLayout
+      title={name ?? "チャット"}
+      subtitle={id ? `ID: ${id}` : undefined}
+      contentStyle={styles.content}
+    >
       <KeyboardAvoidingView
-        style={styles.container}
+        style={styles.kav}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={0}
       >
-        {/* ヘッダー */}
-        <BrowserHeader />
-        <AppHeader
-          title={name ?? "チャット"}
-          subtitle={id ? `ID: ${id}` : undefined}
-        />
-
-
-        {/* メッセージ */}
-        <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+        <ScrollView
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        >
           {messages.map((m) => (
-            <View key={m.id} style={[styles.row, m.fromMe ? styles.rowRight : styles.rowLeft]}>
-              <View style={[styles.bubble, m.fromMe ? styles.bubbleMe : styles.bubbleOther]}>
-                <Text style={[styles.text, m.fromMe ? styles.textMe : styles.textOther]}>{m.text}</Text>
-                <Text style={[styles.time, m.fromMe ? styles.timeMe : styles.timeOther]}>{m.time}</Text>
+            <View
+              key={m.id}
+              style={[styles.row, m.fromMe ? styles.rowRight : styles.rowLeft]}
+            >
+              <View
+                style={[
+                  styles.bubble,
+                  m.fromMe ? styles.bubbleMe : styles.bubbleOther,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.text,
+                    m.fromMe ? styles.textMe : styles.textOther,
+                  ]}
+                >
+                  {m.text}
+                </Text>
+                <Text
+                  style={[
+                    styles.time,
+                    m.fromMe ? styles.timeMe : styles.timeOther,
+                  ]}
+                >
+                  {m.time}
+                </Text>
               </View>
             </View>
           ))}
         </ScrollView>
 
-        {/* 入力 */}
         <View style={styles.inputArea}>
           <TextInput
             value={inputText}
             onChangeText={setInputText}
             placeholder="メッセージを入力…"
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={Design.colors.textMuted}
             style={styles.input}
             multiline
           />
           <TouchableOpacity
-            style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
+            style={[
+              styles.sendButton,
+              !inputText.trim() && styles.sendButtonDisabled,
+            ]}
             onPress={handleSend}
             disabled={!inputText.trim()}
           >
-            <Send size={20} color="#fff" />
+            <Send size={22} color={Design.colors.white} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </MobileFrame>
+    </ScreenLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#e5e7eb" },
-
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#f9fafb",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
+  content: {
+    paddingHorizontal: Design.spacing.lg,
+    paddingTop: Design.spacing.lg,
+    flex: 1,
   },
-  backButton: { flexDirection: "row", alignItems: "center", paddingVertical: 4, paddingRight: 8 },
-  backText: { marginLeft: 4, fontSize: 14, color: "#4b5563" },
-  headerCenter: { flex: 1, alignItems: "center", marginRight: 40 },
-  title: { fontSize: 18, fontWeight: "700", color: "#111827" },
-  subtitle: { fontSize: 12, color: "#6b7280" },
-
+  kav: { flex: 1 },
   list: { flex: 1 },
-  listContent: { padding: 12, paddingBottom: 16 },
-
-  row: { marginBottom: 8, flexDirection: "row" },
+  listContent: {
+    padding: Design.spacing.lg,
+    paddingBottom: Design.spacing.xl,
+  },
+  row: {
+    marginBottom: Design.spacing.sm,
+    flexDirection: "row",
+  },
   rowLeft: { justifyContent: "flex-start" },
   rowRight: { justifyContent: "flex-end" },
-
-  bubble: { maxWidth: "80%", borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
-  bubbleOther: { backgroundColor: "#fff", borderTopLeftRadius: 4 },
-  bubbleMe: { backgroundColor: "#3b82f6", borderTopRightRadius: 4 },
-
-  text: { fontSize: 14 },
-  textOther: { color: "#111827" },
-  textMe: { color: "#fff" },
-
-  time: { fontSize: 10, marginTop: 2 },
-  timeOther: { color: "#9ca3af", textAlign: "left" },
-  timeMe: { color: "#bfdbfe", textAlign: "right" },
-
+  bubble: {
+    maxWidth: "80%",
+    borderRadius: Design.radius.lg,
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.md,
+  },
+  bubbleOther: {
+    backgroundColor: Design.colors.background,
+    borderTopLeftRadius: Design.radius.xs,
+    borderWidth: 1,
+    borderColor: Design.colors.border,
+  },
+  bubbleMe: {
+    backgroundColor: Design.colors.primary,
+    borderTopRightRadius: Design.radius.xs,
+  },
+  text: { fontSize: Design.fontSize.body },
+  textOther: { color: Design.colors.text },
+  textMe: { color: Design.colors.white },
+  time: {
+    fontSize: Design.fontSize.caption,
+    marginTop: Design.spacing.xs,
+  },
+  timeOther: {
+    color: Design.colors.textMuted,
+    textAlign: "left",
+  },
+  timeMe: {
+    color: "rgba(255,255,255,0.85)",
+    textAlign: "right",
+  },
   inputArea: {
     flexDirection: "row",
     alignItems: "flex-end",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#f9fafb",
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.md,
+    backgroundColor: Design.colors.surface,
     borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
+    borderTopColor: Design.colors.border,
+    marginHorizontal: -Design.spacing.lg,
   },
   input: {
     flex: 1,
     maxHeight: 100,
     borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
-    backgroundColor: "#fff",
+    borderColor: Design.colors.border,
+    borderRadius: Design.radius.xl,
+    paddingHorizontal: Design.spacing.lg,
+    paddingVertical: Design.spacing.md,
+    fontSize: Design.fontSize.body,
+    backgroundColor: Design.colors.background,
+    color: Design.colors.text,
   },
   sendButton: {
-    marginLeft: 8,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#3b82f6",
+    marginLeft: Design.spacing.sm,
+    width: 48,
+    height: 48,
+    borderRadius: Design.radius.lg,
+    backgroundColor: Design.colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
-  sendButtonDisabled: { backgroundColor: "#9ca3af" },
+  sendButtonDisabled: {
+    backgroundColor: Design.colors.textMuted,
+  },
 });
