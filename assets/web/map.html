@@ -1235,8 +1235,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
         var map = L.map('map', { zoomControl: false }).setView([26.5915, 127.9775], 14);
 
-        // 通常のタイルレイヤー（オンライン時は常にこれが描画する）
-        L.tileLayer(TILE_URL, TILE_OPTS).addTo(map);
+        // オンライン/オフライン両対応タイルレイヤー
+        // オンライン時はネットワーク取得、オフライン時はIndexedDBキャッシュにフォールバック
+        var tileLayer = LeafletOffline.tileLayerOffline(TILE_URL, TILE_OPTS).addTo(map);
+
+        // オンライン復帰時にタイルを再描画
+        window.addEventListener('online', function() { tileLayer.redraw(); });
 
         // ── 手動保存ロジック ──────────────────────────────
         // LeafletOffline の getTileUrls / downloadTile / saveTile を
@@ -1261,9 +1265,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
                     map.project(bounds.getSouthEast(), zoom)
                 );
 
-                // leaflet.offline の getTileUrls を使うため一時レイヤーを作成
-                var tmpLayer = LeafletOffline.tileLayerOffline(TILE_URL, TILE_OPTS);
-                var tiles = tmpLayer.getTileUrls(area, zoom);
+                var tiles = tileLayer.getTileUrls(area, zoom);
 
                 // 未保存タイルだけに絞る
                 var unsaved = [];
@@ -1311,6 +1313,38 @@ svg.leaflet-image-layer.leaflet-interactive path {
             var btn = document.getElementById('saveBtn');
             if (el)  el.textContent = msg;
             if (btn) btn.disabled = !enableBtn;
+        }
+
+        // ── GPS取得時の自動ダウンロード ──────────────────────────
+        // 初回のユーザー位置受信時に周辺タイルをまとめてキャッシュする
+        var _preDownloaded = false;
+
+        async function preDownloadArea(centerLat, centerLng) {
+            if (_preDownloaded || !navigator.onLine) return;
+            _preDownloaded = true;
+            var DELTA    = 0.05; // 約±5km
+            var MIN_ZOOM = 13;
+            var MAX_ZOOM = 16;
+            var latlngBounds = L.latLngBounds(
+                L.latLng(centerLat - DELTA, centerLng - DELTA),
+                L.latLng(centerLat + DELTA, centerLng + DELTA)
+            );
+            for (var z = MIN_ZOOM; z <= MAX_ZOOM; z++) {
+                var area = L.bounds(
+                    map.project(latlngBounds.getNorthWest(), z),
+                    map.project(latlngBounds.getSouthEast(), z)
+                );
+                var tiles = tileLayer.getTileUrls(area, z);
+                for (var i = 0; i < tiles.length; i++) {
+                    var tile = tiles[i];
+                    if (!(await LeafletOffline.hasTile(tile.key))) {
+                        try {
+                            var blob = await LeafletOffline.downloadTile(tile.url);
+                            await LeafletOffline.saveTile(tile, blob);
+                        } catch(e) { /* ネットワークエラーは無視して継続 */ }
+                    }
+                }
+            }
         }
 
         // ── 以下は既存コードそのまま ──────────────────────────
@@ -1407,6 +1441,9 @@ svg.leaflet-image-layer.leaflet-interactive path {
                 }
 
                 if (message.type === 'updateUsers') {
+                    if (!_preDownloaded && message.users.length > 0) {
+                        preDownloadArea(message.users[0].lat, message.users[0].lng);
+                    }
                     message.users.forEach(function(u) {
                         var icon = L.divIcon({
                             className: 'dot-icon',
@@ -1510,6 +1547,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
                 if (message.type === 'centerOnSelf') {
                     var selfMarker = userMarkers['userA'];
                     if (selfMarker) map.setView(selfMarker.getLatLng(), 15);
+                }
+
+                if (message.type === 'setOnlineStatus') {
+                    if (message.isOnline) tileLayer.redraw();
                 }
 
             } catch (err) { console.error('Map JS Error: ' + err); }

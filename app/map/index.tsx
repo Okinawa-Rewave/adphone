@@ -20,6 +20,7 @@ import PathFinder from 'geojson-path-finder';
 import { WebView } from 'react-native-webview';
 
 import * as Location from 'expo-location';
+import { useOnline } from '@/hooks/useOnline';
 
 import integratedRoadData from '../../assets/roads_all.json';
 import shelterData from '../../assets/shelters.json';
@@ -145,6 +146,8 @@ export default function App() {
   const [destination,    setDestination]    = useState<Destination | null>(null);
   const [disasterEvents, setDisasterEvents] = useState<ScoredEvent[]>([]);
 
+  const { isOnline } = useOnline();
+
   // ── フィルタ状態 ──────────────────────────────────
   const [filter, setFilter] = useState<FilterState>({
     disasters: true,
@@ -263,6 +266,14 @@ export default function App() {
     const events = trustMapEngine.computeScores(userPos.lat, userPos.lng);
     setDisasterEvents(events);
   }, [userPos]);
+
+  // ── オンライン状態をWebViewに通知 ────────────────
+  useEffect(() => {
+    if (!webReady) return;
+    webViewRef.current?.postMessage(
+      JSON.stringify({ type: 'setOnlineStatus', isOnline })
+    );
+  }, [webReady, isOnline]);
 
   // ── WebViewにユーザー位置を送信 ──────────────────
   useEffect(() => {
