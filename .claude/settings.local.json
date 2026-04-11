@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(adb devices:*)",
+      "Bash(adb reverse:*)",
+      "Bash(npx expo:*)",
+      "Bash(adb shell:*)",
+      "Bash(cmd:*)",
+      "Bash(adb logcat:*)",
+      "Bash(jobs -l)",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(netstat -ano)"
+    ]
+  }
+}

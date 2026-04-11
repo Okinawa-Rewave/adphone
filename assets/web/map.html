@@ -1395,14 +1395,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
             hideDlToast();
         }
 
-        // マップ準備完了時にデフォルト中心でダウンロード開始（GPS不要）
-        map.whenReady(function() {
-            if (navigator.onLine) {
-                var c = map.getCenter();
-                preDownloadArea(c.lat, c.lng);
-            }
-        });
-
         // ── 以下は既存コードそのまま ──────────────────────────
 
         var routeLayer        = null;
