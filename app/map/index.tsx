@@ -23,6 +23,7 @@ import { WebView } from 'react-native-webview';
 
 import * as Location from 'expo-location';
 
+import { useOnline } from '@/hooks/useOnline';
 import shelterData from '../../assets/shelters.json';
 import { appendMapSaveHistory, type MapSaveHistoryItem } from '../../lib/mapSaveHistory';
 
@@ -216,6 +217,8 @@ export default function App() {
   const [dlTotal,    setDlTotal]    = useState(0);
   const [dlActive,   setDlActive]   = useState(false);
 
+  const { isOnline } = useOnline();
+
   // ── フィルタ状態 ──────────────────────────────────
   const [filter, setFilter] = useState<FilterState>({
     disasters: true,
@@ -266,8 +269,9 @@ export default function App() {
     return turf.point(nearest);
   }
 
-  // ── GPS取得 ──────────────────────────────────────
+  // ── GPS: 初回は即時取得、その後は移動に追従（タイル自動取得・経路と整合）──
   useEffect(() => {
+    let sub: Location.LocationSubscription | null = null;
     (async () => {
       try {
         setLocLoading(true);
@@ -278,16 +282,34 @@ export default function App() {
           setLocLoading(false);
           return;
         }
-        const loc = await Location.getCurrentPositionAsync({
+        const first = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
-        setUserPos({ id: SELF_ID, lat: loc.coords.latitude, lng: loc.coords.longitude });
+        setUserPos({
+          id: SELF_ID,
+          lat: first.coords.latitude,
+          lng: first.coords.longitude,
+        });
+        setLocLoading(false);
+
+        sub = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, distanceInterval: 50 },
+          (loc) => {
+            setUserPos({
+              id: SELF_ID,
+              lat: loc.coords.latitude,
+              lng: loc.coords.longitude,
+            });
+          }
+        );
       } catch (e: any) {
         setLocError(String(e?.message ?? e));
-      } finally {
         setLocLoading(false);
       }
     })();
+    return () => {
+      sub?.remove();
+    };
   }, []);
 
   const ensureRoutingReady = useCallback(async (targetMode: Mode): Promise<boolean> => {
@@ -367,6 +389,14 @@ export default function App() {
       refreshScores();
     })();
   }, []);
+
+  // ── 接続状態を WebView に通知（復帰時のタイル再描画など）────────────
+  useEffect(() => {
+    if (!webReady) return;
+    webViewRef.current?.postMessage(
+      JSON.stringify({ type: 'setOnlineStatus', isOnline })
+    );
+  }, [webReady, isOnline]);
 
   // ── WebViewにユーザー位置を送信 ──────────────────
   useEffect(() => {
