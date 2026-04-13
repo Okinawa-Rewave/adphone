@@ -10,9 +10,10 @@ import type { ScoredEvent, Category } from '../trustmap-scoring/src/index';
 import type { DisasterType } from './NotificationContext';
 import type { DamageLevel } from '../constants/BuildingDamage';
 import { trustMapEngine } from '../lib/trustmap';
+import { postPayloadStableId } from '../lib/postPayload';
 
 // ── DisasterType → Category マッピング ──────────────────
-const TYPE_TO_CATEGORY: Record<DisasterType, Category> = {
+export const TYPE_TO_CATEGORY: Record<DisasterType, Category> = {
   earthquake: 'danger',
   flood:      'flood',
   fire:       'fire',
@@ -22,7 +23,7 @@ const TYPE_TO_CATEGORY: Record<DisasterType, Category> = {
 };
 
 // ── DamageLevel → severity マッピング ───────────────────
-function levelToSeverity(level: DamageLevel): 1 | 2 | 3 | 4 | 5 {
+export function levelToSeverity(level: DamageLevel): 1 | 2 | 3 | 4 | 5 {
   if (level === 'Lv1') return 2; // 軽微
   if (level === 'Lv2') return 3; // 半壊
   if (level === 'Lv3') return 5; // 全壊
@@ -36,6 +37,8 @@ export type SubmitReportParams = {
   lat:          number | null;
   lon:          number | null;
   text:         string;
+  /** 省略時は受信時刻。BLE と同一キーにするため PostPayload と揃える */
+  timestamp?:  number;
 };
 
 // ── Context 型 ───────────────────────────────────────────
@@ -72,6 +75,13 @@ export function DisasterReportProvider({ children }: { children: React.ReactNode
   const submitReport = (params: SubmitReportParams) => {
     if (params.lat === null || params.lon === null) return;
 
+    const ts = params.timestamp ?? Math.floor(Date.now() / 1000);
+    const id = postPayloadStableId({
+      timestamp:    ts,
+      disasterType: params.disasterType,
+      text:         params.text,
+    });
+
     trustMapEngine.recordObservation(
       {
         category:   TYPE_TO_CATEGORY[params.disasterType],
@@ -83,7 +93,8 @@ export function DisasterReportProvider({ children }: { children: React.ReactNode
         signature:  'sig',
         note:       params.text.trim() || undefined,
       },
-      'sig'
+      'sig',
+      { id, timestamp: ts }
     );
 
     refreshScores();

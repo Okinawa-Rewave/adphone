@@ -29,6 +29,7 @@ import * as Location from "expo-location";
 import { Design } from "@/constants/Design";
 import { LEVEL_CONFIG, type DamageLevel } from "@/constants/BuildingDamage";
 import { encodePayload, payloadToNotificationItem } from "@/lib/postPayload";
+import { computeFeedTrustForPostPayload } from "@/lib/trustFeedSync";
 import { useBleContext } from "@/contexts/BleContext";
 import { useNotifications } from "@/contexts/NotificationContext";
 import type { DisasterType } from "@/contexts/NotificationContext";
@@ -155,18 +156,23 @@ export function CreatePostModal({ visible, onClose }: Props) {
         timestamp: Math.floor(Date.now() / 1000),
       };
 
-      // 投稿者自身のフィードに即時追加
-      const localItem = payloadToNotificationItem(postPayload, { author: "あなた" });
-      addItem(localItem);
-
-      // マップへ即時反映
+      // マップ（TrustMapEngine）へ先に反映 → クラスタスコアとフィード信頼度を一致させる
       submitReport({
         disasterType: postPayload.disasterType,
         damageLevel:  postPayload.damageLevel,
         lat:          postPayload.lat,
         lon:          postPayload.lon,
         text:         postPayload.text,
+        timestamp:    postPayload.timestamp,
       });
+
+      const { trustLevel, trustScore } = computeFeedTrustForPostPayload(postPayload);
+      const localItem = payloadToNotificationItem(postPayload, {
+        author: "あなた",
+        trustLevel,
+        trustScore,
+      });
+      addItem(localItem);
 
       // BLE送信（オフライン対応・プライマリパス）
       if (bleState === "connected") {
