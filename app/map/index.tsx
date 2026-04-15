@@ -22,6 +22,7 @@ import PathFinder from 'geojson-path-finder';
 import { WebView } from 'react-native-webview';
 
 import * as Location from 'expo-location';
+import { Asset } from 'expo-asset';
 
 import shelterData from '../../assets/shelters.json';
 import { appendMapSaveHistory, type MapSaveHistoryItem } from '../../lib/mapSaveHistory';
@@ -177,6 +178,8 @@ export default function App() {
   }>();
   const webViewRef = useRef<WebView>(null);
 
+  const [mapHtmlUri, setMapHtmlUri] = useState<string | null>(null);
+  const [mapLoadError, setMapLoadError] = useState<string | null>(null);
   const [mode, setMode]         = useState<Mode>('walk');
   const [webReady, setWebReady] = useState(false);
   const [distance, setDistance] = useState<number | null>(null);
@@ -265,6 +268,25 @@ export default function App() {
     });
     return turf.point(nearest);
   }
+
+  // ── map.html アセットをローカルにダウンロード ──────
+  const loadMapHtml = useCallback(async () => {
+    setMapLoadError(null);
+    try {
+      const asset = Asset.fromModule(require('../../assets/web/map.html'));
+      await asset.downloadAsync();
+      if (asset.localUri) {
+        setMapHtmlUri(asset.localUri);
+      } else {
+        setMapLoadError('地図ファイルの取得に失敗しました');
+      }
+    } catch (e: any) {
+      console.error('Failed to load map HTML asset:', e);
+      setMapLoadError(e?.message ?? '地図ファイルの読み込みエラー');
+    }
+  }, []);
+
+  useEffect(() => { loadMapHtml(); }, [loadMapHtml]);
 
   // ── GPS取得 ──────────────────────────────────────
   useEffect(() => {
@@ -386,13 +408,28 @@ export default function App() {
   useEffect(() => {
     if (!webReady) return;
     const nextHashes: Record<string, string> = {};
+
     const upserts = disasterEvents.map((e, idx) => {
       const id = `${e.category}:${e.lat.toFixed(5)}:${e.lng.toFixed(5)}:${idx}`;
       const witnessCoords = e.packets.map((p) => ({ lat: p.lat, lng: p.lng }));
       const enclosingRadiusM = calcEnclosingRadiusM(witnessCoords, e.lat, e.lng);
+      const maxSeverity = Math.max(...e.packets.map((p) => p.severity));
+
+      // このクラスターに属するパケットのみからレポートを構築
+      const reports = e.packets
+        .filter((p) => !!p.note)
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .map((p) => ({
+          text: p.note!,
+          ts: p.timestamp,
+          severity: p.severity,
+          category: p.category,
+        }));
+
       const hash = [
-        e.category, e.lat, e.lng, e.severity, e.score, e.stars,
-        e.witnessCount, e.hasOfficial ? 1 : 0, e.packets[0]?.note ?? '', enclosingRadiusM
+        e.category, e.lat, e.lng, e.severity, maxSeverity, e.score, e.stars,
+        e.witnessCount, e.hasOfficial ? 1 : 0, enclosingRadiusM,
+        ...reports.map((r) => `${r.ts}:${r.severity}:${r.category}:${r.text}`),
       ].join('|');
       nextHashes[id] = hash;
       return {
@@ -401,11 +438,12 @@ export default function App() {
         lat: e.lat,
         lng: e.lng,
         severity: e.severity,
+        maxSeverity,
         score: e.score,
         stars: e.stars,
         witnessCount: e.witnessCount,
         hasOfficial: e.hasOfficial,
-        note: e.packets[0]?.note ?? '',
+        reports,
         enclosingRadiusM,
       };
     }).filter((event) => sentDisasterHashesRef.current[event.id] !== nextHashes[event.id]);
@@ -668,12 +706,38 @@ export default function App() {
       <AppBar title="マップ" subtitle={headerSubText} showBack={false} />
 
       <View style={styles.mapContainer}>
+        {!mapHtmlUri ? (
+          <View style={[styles.webview, { justifyContent: 'center', alignItems: 'center' }]}>
+            {mapLoadError ? (
+              <>
+                <Text style={{ color: Design.colors.danger, fontSize: 14, textAlign: 'center', marginHorizontal: 24 }}>
+                  {mapLoadError}
+                </Text>
+                <TouchableOpacity
+                  style={{ marginTop: 16, backgroundColor: Design.colors.primary, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 }}
+                  onPress={loadMapHtml}
+                >
+                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>再試行</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <ActivityIndicator size="large" color={Design.colors.primary} />
+                <Text style={{ marginTop: 12, color: Design.colors.textMuted }}>地図を読み込み中...</Text>
+              </>
+            )}
+          </View>
+        ) : (
         <WebView
           ref={webViewRef}
           style={styles.webview}
-          source={require('../../assets/web/map.html')}
+          source={{ uri: mapHtmlUri }}
           originWhitelist={['*']}
           showsVerticalScrollIndicator={false}
+          onError={(syntheticEvent) => {
+            const { nativeEvent } = syntheticEvent;
+            console.error('WebView error:', nativeEvent.description, nativeEvent);
+          }}
           onLoadEnd={() => {
             setWebReady(true);
             webViewRef.current?.postMessage(
@@ -717,6 +781,7 @@ export default function App() {
           allowUniversalAccessFromFileURLs
           mixedContentMode="always"
         />
+        )}
 
         {isRouting && (
           <View style={styles.routingOverlay}>

@@ -25,6 +25,7 @@ import {
   BookOpen,
   Phone,
   Bluetooth,
+  Building2,
   X,
   ChevronRight,
 } from "lucide-react-native";
@@ -43,6 +44,7 @@ const MENU_ITEMS = [
   { label: "行動マニュアル",   href: "/disaster/manual",              Icon: BookOpen,  section: "disaster" },
   { label: "緊急連絡先",       href: "/disaster/emergency-contacts",  Icon: Phone,     section: "disaster" },
   { label: "アドフォン設定",   href: "/settings/adphone",             Icon: Bluetooth, section: "device" },
+  { label: "自治体ポータル",   href: "/admin",                        Icon: Building2, section: "admin" },
 ] as const;
 
 export function SideDrawer() {
@@ -70,6 +72,7 @@ export function SideDrawer() {
     { key: "main",    label: "アカウント" },
     { key: "disaster",label: "防災機能" },
     { key: "device",  label: "デバイス" },
+    { key: "admin",   label: "管理" },
   ];
 
   return (

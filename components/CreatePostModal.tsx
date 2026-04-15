@@ -159,14 +159,8 @@ export function CreatePostModal({ visible, onClose }: Props) {
       const localItem = payloadToNotificationItem(postPayload, { author: "あなた" });
       addItem(localItem);
 
-      // マップへ即時反映
-      submitReport({
-        disasterType: postPayload.disasterType,
-        damageLevel:  postPayload.damageLevel,
-        lat:          postPayload.lat,
-        lon:          postPayload.lon,
-        text:         postPayload.text,
-      });
+      // マップへ即時反映（決定論的IDでTrustMapに投入）
+      submitReport(postPayload);
 
       // BLE送信（オフライン対応・プライマリパス）
       if (bleState === "connected") {
@@ -242,7 +236,15 @@ export function CreatePostModal({ visible, onClose }: Props) {
                 <TouchableOpacity
                   key={type}
                   style={[styles.typeBtn, active && { borderColor: color, backgroundColor: color + "18" }]}
-                  onPress={() => setSelectedType(active ? null : type)}
+                  onPress={() => {
+                    const next = active ? null : type;
+                    setSelectedType(next);
+                    if (next !== "collapse") {
+                      setPhotoUri(null);
+                      setDamageLevel(null);
+                      setShowCamera(false);
+                    }
+                  }}
                   activeOpacity={0.7}
                 >
                   <Icon size={18} color={active ? color : Design.colors.textMuted} strokeWidth={2} />
@@ -278,57 +280,60 @@ export function CreatePostModal({ visible, onClose }: Props) {
             </View>
           )}
 
-          {/* 写真・崩壊度判定 */}
-          <Text style={styles.fieldLabel}>写真（任意）</Text>
-          {!photoUri && (
-            <TouchableOpacity style={styles.cameraBtn} onPress={openCamera} activeOpacity={0.7}>
-              <Camera size={18} color={Design.colors.primary} strokeWidth={2} />
-              <Text style={styles.cameraBtnText}>建物を撮影して崩壊度を判定</Text>
-            </TouchableOpacity>
-          )}
-          {photoUri && (
-            <View style={styles.photoResult}>
-              <Image source={{ uri: photoUri }} style={styles.thumbnail} resizeMode="cover" />
-              <View style={styles.damageInfo}>
-                {analyzing ? (
-                  <ActivityIndicator size="small" color={Design.colors.primary} />
-                ) : damageLevel === "manual" ? (
-                  // AI判定不可 → 手動選択
-                  <>
-                    <Text style={styles.manualLabel}>損傷レベルを選択</Text>
-                    <View style={styles.manualBtns}>
-                      {(["Lv1", "Lv2", "Lv3"] as const).map((lv) => (
-                        <TouchableOpacity
-                          key={lv}
-                          style={[styles.manualBtn, { borderColor: LEVEL_CONFIG[lv].color }]}
-                          onPress={() => setDamageLevel(lv)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.manualBtnText, { color: LEVEL_CONFIG[lv].color }]}>
-                            {lv}
-                          </Text>
+          {/* 写真・崩壊度判定（建物崩壊のときのみ） */}
+          {selectedType === "collapse" && (
+            <>
+              <Text style={styles.fieldLabel}>写真（任意）</Text>
+              {!photoUri && (
+                <TouchableOpacity style={styles.cameraBtn} onPress={openCamera} activeOpacity={0.7}>
+                  <Camera size={18} color={Design.colors.primary} strokeWidth={2} />
+                  <Text style={styles.cameraBtnText}>建物を撮影して崩壊度を判定</Text>
+                </TouchableOpacity>
+              )}
+              {photoUri && (
+                <View style={styles.photoResult}>
+                  <Image source={{ uri: photoUri }} style={styles.thumbnail} resizeMode="cover" />
+                  <View style={styles.damageInfo}>
+                    {analyzing ? (
+                      <ActivityIndicator size="small" color={Design.colors.primary} />
+                    ) : damageLevel === "manual" ? (
+                      <>
+                        <Text style={styles.manualLabel}>損傷レベルを選択</Text>
+                        <View style={styles.manualBtns}>
+                          {(["Lv1", "Lv2", "Lv3"] as const).map((lv) => (
+                            <TouchableOpacity
+                              key={lv}
+                              style={[styles.manualBtn, { borderColor: LEVEL_CONFIG[lv].color }]}
+                              onPress={() => setDamageLevel(lv)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[styles.manualBtnText, { color: LEVEL_CONFIG[lv].color }]}>
+                                {lv}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </>
+                    ) : damageLevel ? (
+                      <View style={[styles.damageBadge, {
+                        backgroundColor: LEVEL_CONFIG[damageLevel].bg,
+                        borderColor: LEVEL_CONFIG[damageLevel].color,
+                      }]}>
+                        <Text style={[styles.damageBadgeText, { color: LEVEL_CONFIG[damageLevel].color }]}>
+                          {damageLevel}　{LEVEL_CONFIG[damageLevel].label}
+                        </Text>
+                        <TouchableOpacity onPress={() => setDamageLevel("manual")}>
+                          <Text style={styles.changeText}>変更</Text>
                         </TouchableOpacity>
-                      ))}
-                    </View>
-                  </>
-                ) : damageLevel ? (
-                  <View style={[styles.damageBadge, {
-                    backgroundColor: LEVEL_CONFIG[damageLevel].bg,
-                    borderColor: LEVEL_CONFIG[damageLevel].color,
-                  }]}>
-                    <Text style={[styles.damageBadgeText, { color: LEVEL_CONFIG[damageLevel].color }]}>
-                      {damageLevel}　{LEVEL_CONFIG[damageLevel].label}
-                    </Text>
-                    <TouchableOpacity onPress={() => setDamageLevel("manual")}>
-                      <Text style={styles.changeText}>変更</Text>
+                      </View>
+                    ) : null}
+                    <TouchableOpacity onPress={resetPhoto}>
+                      <Text style={styles.retryText}>再撮影</Text>
                     </TouchableOpacity>
                   </View>
-                ) : null}
-                <TouchableOpacity onPress={resetPhoto}>
-                  <Text style={styles.retryText}>再撮影</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+                </View>
+              )}
+            </>
           )}
 
           {/* 内容 */}

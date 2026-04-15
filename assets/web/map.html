@@ -683,6 +683,46 @@ svg.leaflet-image-layer.leaflet-interactive path {
         .bg-teal  { background-color: #0D9488; }
         .shelter-popup { font-weight: bold; color: #16A34A; }
 
+        /* 災害ポップアップ タイムライン */
+        .disaster-popup { min-width: 180px; max-width: 260px; }
+        .disaster-popup .dp-header { margin-bottom: 6px; }
+        .disaster-popup .dp-official { font-weight: bold; margin: 2px 0 4px; }
+        .disaster-popup .dp-meta { color: #64748B; font-size: 11px; margin-bottom: 4px; }
+        .disaster-popup .dp-timeline { list-style: none; padding: 0; margin: 6px 0 0; }
+        .disaster-popup .dp-timeline li {
+            position: relative;
+            padding: 4px 0 4px 14px;
+            border-left: 2px solid #CBD5E1;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .disaster-popup .dp-timeline li:first-child {
+            border-color: #3B82F6;
+            font-weight: 700;
+        }
+        .disaster-popup .dp-timeline li::before {
+            content: '';
+            position: absolute;
+            left: -5px; top: 8px;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #CBD5E1;
+        }
+        .disaster-popup .dp-timeline li:first-child::before { background: #3B82F6; }
+        .disaster-popup .dp-time { color: #94A3B8; font-size: 10px; font-weight: 400; }
+        .disaster-popup .dp-sev {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 1px 5px;
+            border-radius: 4px;
+            margin-right: 3px;
+            vertical-align: middle;
+        }
+        .dp-sev-1 { background: #DCFCE7; color: #166534; }
+        .dp-sev-2 { background: #FEF3C7; color: #92400E; }
+        .dp-sev-3 { background: #FEE2E2; color: #991B1B; }
+
         /* オフライン保存UI */
         #offlineBar {
             position: fixed;
@@ -1676,6 +1716,127 @@ svg.leaflet-image-layer.leaflet-interactive path {
             runBatch();
         }
 
+        // ── ポップアップ用ヘルパー（モジュールレベル：クリックハンドラから参照可）──
+        var CATEGORY_EMOJI = {
+            flood: '🌊', tsunami: '🌊',
+            fire: '🔥', gas_leak: '💨',
+            building_collapse: '🏚️', landslide: '⛰️',
+            road_block: '🚧', danger: '⚠️',
+            injured: '🚑',
+        };
+        var COLLAPSE_SEV = [
+            null,
+            { label: 'Lv1 軽微', cls: 'dp-sev-1' },
+            { label: 'Lv1 軽微', cls: 'dp-sev-1' },
+            { label: 'Lv2 半壊', cls: 'dp-sev-2' },
+            { label: 'Lv3 全壊', cls: 'dp-sev-3' },
+            { label: 'Lv3 全壊', cls: 'dp-sev-3' },
+        ];
+        var GENERAL_SEV = [
+            null,
+            { label: '軽度', cls: 'dp-sev-1' },
+            { label: '軽度', cls: 'dp-sev-1' },
+            { label: '中度', cls: 'dp-sev-2' },
+            { label: '重度', cls: 'dp-sev-3' },
+            { label: '重度', cls: 'dp-sev-3' },
+        ];
+        function formatTimestamp(ts) {
+            var d = new Date(ts * 1000);
+            var h = ('0' + d.getHours()).slice(-2);
+            var m = ('0' + d.getMinutes()).slice(-2);
+            return h + ':' + m;
+        }
+        function sevBadge(sev, cat) {
+            var tbl = cat === 'building_collapse' ? COLLAPSE_SEV : GENERAL_SEV;
+            var info = tbl[Math.min(Math.max(Math.round(sev), 1), 5)];
+            if (!info) return '';
+            return '<span class="dp-sev ' + info.cls + '">' + info.label + '</span>';
+        }
+        function buildPopupHtml(e) {
+            var label       = CATEGORY_LABEL[e.category] || e.category;
+            var stars       = '★'.repeat(e.stars) + '☆'.repeat(3 - e.stars);
+            var maxSev      = typeof e.maxSeverity === 'number' ? e.maxSeverity : Math.round(e.severity || 3);
+            var headerBadge = sevBadge(maxSev, e.category);
+            var official    = e.hasOfficial ? '<div class="dp-official">🏛️ 公的機関確認済み</div>' : '';
+            var reports     = e.reports || [];
+            if (!reports.length && e.note) {
+                reports = [{ text: e.note, ts: 0, severity: Math.round(e.severity || 3), category: e.category }];
+            }
+            var latestText = reports.length
+                ? (reports[0].text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                : label;
+            var header =
+                '<div class="dp-header"><b>' + latestText + '</b> ' + headerBadge + official + '</div>' +
+                '<div class="dp-meta">' + label + ' ｜ 目撃数: ' + e.witnessCount + ' 件 ｜ 信頼度: ' + stars + '</div>';
+            var timeline = '';
+            if (reports.length) {
+                timeline = '<ul class="dp-timeline">';
+                reports.forEach(function(r) {
+                    var time  = r.ts ? '<span class="dp-time">' + formatTimestamp(r.ts) + '</span> ' : '';
+                    var badge = r.severity ? sevBadge(r.severity, r.category || e.category) + ' ' : '';
+                    var emoji = (CATEGORY_EMOJI[r.category || e.category] || '') + ' ';
+                    var txt   = (r.text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    timeline += '<li>' + time + badge + emoji + txt + '</li>';
+                });
+                timeline += '</ul>';
+            }
+            return '<div class="disaster-popup">' + header + timeline + '</div>';
+        }
+        function buildMergedPopupHtml(events) {
+            var allReports = [];
+            events.forEach(function(e) {
+                (e.reports || []).forEach(function(r) {
+                    allReports.push({ text: r.text, ts: r.ts, severity: r.severity, category: r.category || e.category });
+                });
+            });
+            allReports.sort(function(a, b) { return b.ts - a.ts; });
+            var labels = events.map(function(e) {
+                return (CATEGORY_EMOJI[e.category] || '') + ' ' + (CATEGORY_LABEL[e.category] || e.category);
+            }).join(' ＋ ');
+            var totalWitness = events.reduce(function(s, e) { return s + (e.witnessCount || 0); }, 0);
+            var latestText = allReports.length
+                ? (allReports[0].text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                : labels;
+            var header =
+                '<div class="dp-header"><b>' + latestText + '</b></div>' +
+                '<div class="dp-meta">' + labels + ' ｜ 合計目撃数: ' + totalWitness + ' 件</div>';
+            var timeline = '';
+            if (allReports.length) {
+                timeline = '<ul class="dp-timeline">';
+                allReports.forEach(function(r) {
+                    var time  = r.ts ? '<span class="dp-time">' + formatTimestamp(r.ts) + '</span> ' : '';
+                    var badge = r.severity ? sevBadge(r.severity, r.category) + ' ' : '';
+                    var emoji = (CATEGORY_EMOJI[r.category] || '') + ' ';
+                    var txt   = (r.text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    timeline += '<li>' + time + badge + emoji + txt + '</li>';
+                });
+                timeline += '</ul>';
+            }
+            return '<div class="disaster-popup">' + header + timeline + '</div>';
+        }
+        function handleDisasterClick(ev) {
+            L.DomEvent.stopPropagation(ev);
+            var latlng = ev.latlng;
+            var matched = [];
+            [disasterLayerMap, injuredLayerMap].forEach(function(layerMap) {
+                Object.keys(layerMap).forEach(function(id) {
+                    var entry = layerMap[id];
+                    if (!entry.data) return;
+                    var d = haversineM(latlng.lat, latlng.lng, entry.data.lat, entry.data.lng);
+                    var r = Math.max(entry.data.enclosingRadiusM || 0, 30);
+                    if (d <= r) matched.push(entry.data);
+                });
+            });
+            if (!matched.length) return;
+            var html = matched.length === 1
+                ? buildPopupHtml(matched[0])
+                : buildMergedPopupHtml(matched);
+            L.popup({ maxWidth: 320, maxHeight: 400 })
+                .setLatLng(latlng)
+                .setContent(html)
+                .openOn(map);
+        }
+
         map.on('click', function(e) {
             var msg = JSON.stringify({ type: 'mapTap', lat: e.latlng.lat, lng: e.latlng.lng });
             if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(msg);
@@ -1765,10 +1926,16 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
                 if (message.type === 'updateDisastersPatch') {
                     function hashEvent(e) {
-                        return [
-                            e.category, e.lat, e.lng, e.severity, e.score, e.stars,
-                            e.witnessCount, e.hasOfficial ? 1 : 0, e.note || '', e.enclosingRadiusM || ''
-                        ].join('|');
+                        var parts = [
+                            e.category, e.lat, e.lng, e.severity,
+                            e.maxSeverity || '', e.score, e.stars,
+                            e.witnessCount, e.hasOfficial ? 1 : 0, e.enclosingRadiusM || ''
+                        ];
+                        (e.reports || []).forEach(function(r) {
+                            parts.push(r.ts + ':' + (r.severity || '') + ':' + (r.category || '') + ':' + r.text);
+                        });
+                        if (!e.reports && e.note) parts.push(e.note);
+                        return parts.join('|');
                     }
                     function removeDisasterById(id) {
                         if (disasterLayerMap[id]) {
@@ -1789,17 +1956,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
                         if (current && current.hash === newHash) return;
                         if (current) removeDisasterById(id);
 
-                        var color    = CATEGORY_COLOR[e.category] || '#DB2777';
-                        var label    = CATEGORY_LABEL[e.category] || e.category;
-                        var stars    = '★'.repeat(e.stars) + '☆'.repeat(3 - e.stars);
-                        var note     = e.note || '';
-                        var official = e.hasOfficial ? '<b>🏛️ 公的機関確認済み</b><br/>' : '';
-                        var popup =
-                            '<b>' + stars + ' ' + label + '</b><br/>' +
-                            official +
-                            '目撃数: ' + e.witnessCount + ' 件<br/>' +
-                            (note ? '<i>' + note + '</i><br/>' : '') +
-                            'score: ' + Number(e.score || 0).toFixed(1);
+                        var color   = CATEGORY_COLOR[e.category] || '#DB2777';
                         var radiusM = typeof e.enclosingRadiusM === 'number'
                             ? e.enclosingRadiusM
                             : calcEnclosingRadius(e.witnessCoords, e.lat, e.lng);
@@ -1810,20 +1967,20 @@ svg.leaflet-image-layer.leaflet-interactive path {
                             fillColor:   color,
                             fillOpacity: 0.2,
                             weight:      2.5,
-                        }).bindPopup(popup);
+                        }).on('click', handleDisasterClick);
                         var centerDot = L.circleMarker([e.lat, e.lng], {
                             radius:      8,
                             color:       'white',
                             fillColor:   color,
                             fillOpacity: 1.0,
                             weight:      2,
-                        }).bindPopup(popup);
+                        }).on('click', handleDisasterClick);
                         if (isInjured) {
                             if (showInjured) { circle.addTo(map); centerDot.addTo(map); }
-                            injuredLayerMap[id] = { circle: circle, centerDot: centerDot, hash: newHash };
+                            injuredLayerMap[id] = { circle: circle, centerDot: centerDot, hash: newHash, data: e };
                         } else {
                             if (showDisasters) { circle.addTo(map); centerDot.addTo(map); }
-                            disasterLayerMap[id] = { circle: circle, centerDot: centerDot, hash: newHash };
+                            disasterLayerMap[id] = { circle: circle, centerDot: centerDot, hash: newHash, data: e };
                         }
                     }
 
