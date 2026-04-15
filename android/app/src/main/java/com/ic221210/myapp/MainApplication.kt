@@ -1,11 +1,7 @@
-// /home/ic221210/ReactNative/my-app/android/app/src/main/java/com/ic221210/myapp/MainApplication.kt
 package com.ic221210.myapp
 
 import android.app.Application
 import android.content.res.Configuration
-import com.ic221210.myapp.PeopleDetectorPackage
-import com.ic221210.myapp.BuildingDamagePackage
-
 
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -29,8 +25,6 @@ class MainApplication : Application(), ReactApplication {
             val packages = PackageList(this).packages
             // Packages that cannot be autolinked yet can be added manually here, for example:
             // packages.add(MyReactNativePackage())
-            packages.add(PeopleDetectorPackage())
-            packages.add(BuildingDamagePackage())
             return packages
           }
 

@@ -102,7 +102,7 @@ export function postPayloadStableId(
 /** PostPayload を NotificationItem に変換（フィード表示用） */
 export function payloadToNotificationItem(
   p: PostPayload,
-  opts?: { author?: string; trustLevel?: TrustLevel; trustScore?: number }
+  opts?: { author?: string; authorUid?: string; trustLevel?: TrustLevel; trustScore?: number }
 ): NotificationItem {
   const tsMs = p.timestamp * 1000;
   const date = new Date(tsMs);
@@ -128,8 +128,11 @@ export function payloadToNotificationItem(
     trustScore: opts?.trustScore ?? 30,
     timestamp: tsMs,
     author: opts?.author ?? "市民レポート",
+    authorUid: opts?.authorUid,
     location,
     helpfulCount: 0,
     nearbyConfirmations: 0,
+    agreeCount: 0,
+    disagreeCount: 0,
   };
 }

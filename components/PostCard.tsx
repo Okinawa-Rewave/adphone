@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { MapPin, CheckCircle2, ThumbsUp, Eye, Wifi } from "lucide-react-native";
+import { MapPin, CheckCircle2, ThumbsUp, ThumbsDown, Eye, Wifi } from "lucide-react-native";
 import { Design } from "@/constants/Design";
 import { TrustBadge } from "@/components/TrustBadge";
 import { TrustMeter } from "@/components/TrustMeter";
@@ -14,9 +14,38 @@ interface Props {
   onPress?: () => void;
   onSign?: () => void;
   onHelpful?: () => void;
+  onDisagree?: () => void;
 }
 
-export function PostCard({ item, onPress, onSign, onHelpful }: Props) {
+function authorScoreColor(score: number): string {
+  if (score >= 70) return Design.colors.trustVerified;
+  if (score >= 40) return Design.colors.trustPartial;
+  return Design.colors.trustUnverified;
+}
+
+function AuthorScoreBadge({ score }: { score: number }) {
+  const color = authorScoreColor(score);
+  return (
+    <View style={[authorBadgeStyles.badge, { borderColor: color + "60", backgroundColor: color + "18" }]}>
+      <Text style={[authorBadgeStyles.text, { color }]}>{score}pt</Text>
+    </View>
+  );
+}
+
+const authorBadgeStyles = StyleSheet.create({
+  badge: {
+    borderWidth: 1,
+    borderRadius: Design.radius.full,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  text: {
+    fontSize: 11,
+    fontWeight: Design.fontWeight.semi,
+  },
+});
+
+export function PostCard({ item, onPress, onSign, onHelpful, onDisagree }: Props) {
   const trust = item.trustLevel ?? "unverified";
   const score = item.trustScore ?? 0;
   const lastSig = item.signatures?.length
@@ -48,7 +77,12 @@ export function PostCard({ item, onPress, onSign, onHelpful }: Props) {
             )}
             {item.unread && <View style={styles.unreadDot} />}
           </View>
-          <Text style={styles.author}>{item.author ?? "不明"}</Text>
+          <View style={styles.authorRow}>
+            <Text style={styles.author}>{item.author ?? "不明"}</Text>
+            {item.authorTrustScore != null && (
+              <AuthorScoreBadge score={item.authorTrustScore} />
+            )}
+          </View>
         </View>
       </View>
 
@@ -117,6 +151,23 @@ export function PostCard({ item, onPress, onSign, onHelpful }: Props) {
               役立つ {item.helpfulCount ? `${item.helpfulCount}` : ""}
             </Text>
           </TouchableOpacity>
+
+          {item.authorUid != null && (
+            <TouchableOpacity
+              style={[styles.actionBtn, item.myVote === "disagree" && styles.actionBtnDisagree]}
+              onPress={onDisagree}
+              activeOpacity={0.7}
+            >
+              <ThumbsDown
+                size={15}
+                color={item.myVote === "disagree" ? Design.colors.danger : Design.colors.textMuted}
+                strokeWidth={2}
+              />
+              <Text style={[styles.actionText, item.myVote === "disagree" && { color: Design.colors.danger }]}>
+                否定 {item.disagreeCount ? `${item.disagreeCount}` : ""}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {item.impressions != null && (
@@ -161,6 +212,11 @@ const styles = StyleSheet.create({
   headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   locationRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   locationText: { fontSize: 12, color: Design.colors.textMuted },
+  authorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   author: {
     fontSize: Design.fontSize.caption,
     fontWeight: Design.fontWeight.semi,
@@ -235,6 +291,7 @@ const styles = StyleSheet.create({
   },
   actionBtnSigned: { borderColor: Design.colors.trustVerified, backgroundColor: Design.colors.trustVerifiedMuted },
   actionBtnHelpful: { borderColor: Design.colors.trustPartial, backgroundColor: Design.colors.trustPartialMuted },
+  actionBtnDisagree: { borderColor: Design.colors.danger, backgroundColor: Design.colors.danger + "15" },
   actionText: { fontSize: 12, color: Design.colors.textMuted, fontWeight: Design.fontWeight.semi },
   impressions: { flexDirection: "row", alignItems: "center", gap: 3 },
   impressionsText: { fontSize: 11, color: Design.colors.textMuted },
