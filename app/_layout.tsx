@@ -19,6 +19,7 @@ import { useEffect } from "react";
 import { PermissionsAndroid, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { initTrustSystem } from "@/lib/userTrust";
 
 async function requestPermissions() {
   if (Platform.OS === "android") {
@@ -48,6 +49,7 @@ function RootOverlays() {
 export default function RootLayout() {
   useEffect(() => {
     requestPermissions();
+    initTrustSystem().catch(console.warn);
   }, []);
 
   const colorScheme = useColorScheme();

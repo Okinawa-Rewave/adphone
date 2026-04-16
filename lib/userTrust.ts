@@ -1,4 +1,5 @@
-// lib/userTrust.ts — ユーザー信頼度スコアの Firestore R/W
+// lib/userTrust.ts — 信頼度スコア（オフライン: SQLite / オンライン: Firestore + 同期）
+import NetInfo from "@react-native-community/netinfo";
 import {
   collection,
   doc,
@@ -6,105 +7,189 @@ import {
   runTransaction,
   serverTimestamp,
 } from "firebase/firestore";
-import { auth, db } from "./firebase";
+import { auth, db as firestoreDb } from "./firebase";
 import { ensureAnonAuth } from "./auth";
+import { getOfflineUid } from "./offlineAuth";
+import {
+  ensureTrustTables,
+  getLocalTrustScore,
+  setLocalTrustScore,
+  getLocalVote,
+  upsertLocalVote,
+  deleteLocalVote,
+  getPendingVotes,
+  markVoteSynced,
+} from "./db";
 
-const AGREE_DELTA = 3;
+const AGREE_DELTA    =  3;
 const DISAGREE_DELTA = -5;
-const SCORE_MIN = 0;
-const SCORE_MAX = 100;
-const DEFAULT_SCORE = 50;
+const SCORE_MIN      =  0;
+const SCORE_MAX      = 100;
+const DEFAULT_SCORE  = 50;
 
 function clamp(n: number): number {
   return Math.max(SCORE_MIN, Math.min(SCORE_MAX, n));
+}
+
+async function isOnline(): Promise<boolean> {
+  const state = await NetInfo.fetch();
+  return !!state.isConnected && state.isInternetReachable !== false;
 }
 
 function voteDocId(postId: string, voterId: string): string {
   return `${postId}_${voterId}`;
 }
 
-/**
- * 投票を Firestore に書き込み、投稿者の userTrustScore を更新する。
- * - 自分の投稿への投票は無視。
- * - 既存票がある場合は反転（取り消し→再投票）。
- */
+/** 起動時に一度呼ぶ。テーブル作成 + オフライン中に溜まった投票を Firestore へ同期。 */
+export async function initTrustSystem(): Promise<void> {
+  await ensureTrustTables();
+  if (await isOnline()) {
+    await flushPendingVotes();
+  }
+}
+
+// ============================================================
+// 投票
+// ============================================================
+
 export async function castVote(
   postId: string,
   postAuthorUid: string,
   voteType: "agree" | "disagree"
 ): Promise<void> {
-  await ensureAnonAuth();
-  const voterId = auth.currentUser?.uid;
-  if (!voterId) return;
-  if (voterId === postAuthorUid) return; // 自分の投稿は無効
+  await ensureTrustTables();
+  const voterId = await resolveVoterId();
+  if (!voterId || voterId === postAuthorUid) return;
 
-  const voteRef = doc(db, "votes", voteDocId(postId, voterId));
-  const authorRef = doc(db, "users", postAuthorUid);
+  const id = voteDocId(postId, voterId);
+  const existing = await getLocalVote(id);
 
-  await runTransaction(db, async (tx) => {
-    const voteSnap = await tx.get(voteRef);
+  // スコア差分を計算
+  let delta = voteType === "agree" ? AGREE_DELTA : DISAGREE_DELTA;
+  if (existing) {
+    if (existing.vote_type === voteType) {
+      // 同じ票 → 取り消し
+      delta = voteType === "agree" ? -AGREE_DELTA : -DISAGREE_DELTA;
+      await deleteLocalVote(id);
+    } else {
+      // 逆票に変更
+      const reversePrev = existing.vote_type === "agree" ? -AGREE_DELTA : -DISAGREE_DELTA;
+      delta = reversePrev + delta;
+      await upsertLocalVote(id, postId, voterId, postAuthorUid, voteType, 0);
+    }
+  } else {
+    await upsertLocalVote(id, postId, voterId, postAuthorUid, voteType, 0);
+  }
+
+  // ローカルスコア更新
+  const current = await getLocalTrustScore(postAuthorUid);
+  await setLocalTrustScore(postAuthorUid, clamp(current + delta));
+
+  // オンラインなら即 Firestore に反映
+  if (await isOnline()) {
+    await syncVoteToFirestore(id, postId, voterId, postAuthorUid, existing, voteType, delta);
+    await markVoteSynced(id);
+  }
+}
+
+// ============================================================
+// スコア取得
+// ============================================================
+
+export async function getUserTrustScore(uid: string): Promise<number> {
+  await ensureTrustTables();
+  if (await isOnline()) {
+    try {
+      const snap = await getDoc(doc(firestoreDb, "users", uid));
+      const score: number = snap.exists()
+        ? (snap.data().userTrustScore ?? DEFAULT_SCORE)
+        : DEFAULT_SCORE;
+      await setLocalTrustScore(uid, score); // キャッシュ更新
+      return score;
+    } catch {
+      // Firestore 失敗時はキャッシュにフォールバック
+    }
+  }
+  return getLocalTrustScore(uid);
+}
+
+// ============================================================
+// 自分の投票状態確認
+// ============================================================
+
+export async function getMyVote(
+  postId: string
+): Promise<"agree" | "disagree" | null> {
+  await ensureTrustTables();
+  const voterId = await resolveVoterId();
+  if (!voterId) return null;
+  const row = await getLocalVote(voteDocId(postId, voterId));
+  return row?.vote_type ?? null;
+}
+
+// ============================================================
+// 内部ユーティリティ
+// ============================================================
+
+/** Firebase UID（オンライン）または オフライン UUID を返す */
+async function resolveVoterId(): Promise<string | null> {
+  if (await isOnline()) {
+    await ensureAnonAuth();
+    return auth.currentUser?.uid ?? await getOfflineUid();
+  }
+  return getOfflineUid();
+}
+
+/** 未同期の投票をまとめて Firestore に反映する */
+async function flushPendingVotes(): Promise<void> {
+  const pending = await getPendingVotes();
+  for (const v of pending) {
+    try {
+      const existing = null; // 既存票はローカルで処理済みなのでFirestoreに書くだけ
+      const delta = v.vote_type === "agree" ? AGREE_DELTA : DISAGREE_DELTA;
+      await syncVoteToFirestore(
+        v.id, v.post_id, v.voter_id, v.post_author_id,
+        null, v.vote_type, delta
+      );
+      await markVoteSynced(v.id);
+    } catch {
+      // 個別失敗は無視して次へ（次回起動時に再試行）
+    }
+  }
+}
+
+/** Firestore に投票とスコアを書き込む（トランザクション） */
+async function syncVoteToFirestore(
+  voteId: string,
+  postId: string,
+  voterId: string,
+  postAuthorId: string,
+  existingLocal: { vote_type: "agree" | "disagree" } | null,
+  voteType: "agree" | "disagree",
+  scoreDelta: number
+): Promise<void> {
+  const voteRef = doc(firestoreDb, "votes", voteId);
+  const authorRef = doc(firestoreDb, "users", postAuthorId);
+
+  await runTransaction(firestoreDb, async (tx) => {
     const authorSnap = await tx.get(authorRef);
-
     const currentScore: number = authorSnap.exists()
       ? (authorSnap.data().userTrustScore ?? DEFAULT_SCORE)
       : DEFAULT_SCORE;
+    const newScore = clamp(currentScore + scoreDelta);
 
-    let scoreDelta = voteType === "agree" ? AGREE_DELTA : DISAGREE_DELTA;
-
-    if (voteSnap.exists()) {
-      const prev = voteSnap.data().voteType as "agree" | "disagree";
-      if (prev === voteType) {
-        // 同じ票を再度押した → 取り消し
-        scoreDelta = voteType === "agree" ? -AGREE_DELTA : -DISAGREE_DELTA;
-        tx.delete(voteRef);
-      } else {
-        // 違う票に変更 → 前の効果を戻してから新しい効果を適用
-        const reversePrev = prev === "agree" ? -AGREE_DELTA : -DISAGREE_DELTA;
-        scoreDelta = reversePrev + scoreDelta;
-        tx.set(voteRef, {
-          postId,
-          voterId,
-          postAuthorId: postAuthorUid,
-          voteType,
-          createdAt: serverTimestamp(),
-        });
-      }
+    const isCancel = existingLocal?.vote_type === voteType;
+    if (isCancel) {
+      tx.delete(voteRef);
     } else {
-      // 新規票
       tx.set(voteRef, {
         postId,
         voterId,
-        postAuthorId: postAuthorUid,
+        postAuthorId,
         voteType,
         createdAt: serverTimestamp(),
       });
     }
-
-    const newScore = clamp(currentScore + scoreDelta);
     tx.set(authorRef, { userTrustScore: newScore }, { merge: true });
   });
-}
-
-/**
- * ユーザーの信頼度スコアを取得する。
- * ドキュメントが存在しない場合はデフォルト値 50 を返す。
- */
-export async function getUserTrustScore(uid: string): Promise<number> {
-  const snap = await getDoc(doc(db, "users", uid));
-  if (!snap.exists()) return DEFAULT_SCORE;
-  return snap.data().userTrustScore ?? DEFAULT_SCORE;
-}
-
-/**
- * 自分の投票状態を確認する。
- */
-export async function getMyVote(
-  postId: string
-): Promise<"agree" | "disagree" | null> {
-  await ensureAnonAuth();
-  const voterId = auth.currentUser?.uid;
-  if (!voterId) return null;
-  const snap = await getDoc(doc(db, "votes", voteDocId(postId, voterId)));
-  if (!snap.exists()) return null;
-  return snap.data().voteType as "agree" | "disagree";
 }
