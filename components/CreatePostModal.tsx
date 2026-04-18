@@ -34,6 +34,9 @@ import { useBleContext } from "@/contexts/BleContext";
 import { useNotifications } from "@/contexts/NotificationContext";
 import type { DisasterType } from "@/contexts/NotificationContext";
 import { useDisasterReport } from "@/contexts/DisasterReportContext";
+import GemmaModule from "@/lib/gemma";
+
+const GEMMA_MODEL_PATH = "/sdcard/gemma-3n-E4B-it-int4.litertlm";
 
 const DISASTER_OPTIONS: { type: DisasterType; label: string; Icon: any; color: string }[] = [
   { type: "earthquake", label: "地震",     Icon: AlertTriangle, color: Design.colors.disasterEarthquake },
@@ -121,21 +124,40 @@ export function CreatePostModal({ visible, onClose }: Props) {
     setShowCamera(false);
     setAnalyzing(true);
     try {
-      const buildingDamage = NativeModules.BuildingDamage;
-      if (!buildingDamage) {
-        // ネイティブモジュール未搭載ビルド → 手動選択モードへ
+      // モデルが未初期化の場合（起動時の初期化に失敗していた場合など）ここで再試行
+      await GemmaModule.initializeModel(GEMMA_MODEL_PATH);
+
+      const prompt = "この画像に映っている建物の被害状況を分析してください。回答は以下の形式で始めてください：\n【被害レベル】Lv1, Lv2, Lv3のいずれか\n【状況説明】簡潔な説明";
+      const result = await GemmaModule.generateResponseWithImage(prompt, photo.uri);
+      console.log("[Gemma] Analysis Result:", result);
+
+      // 被害レベルの抽出 (Lv1, Lv2, Lv3)
+      if (result.includes("Lv3")) {
+        setDamageLevel("Lv3");
+      } else if (result.includes("Lv2")) {
+        setDamageLevel("Lv2");
+      } else if (result.includes("Lv1")) {
+        setDamageLevel("Lv1");
+      } else {
         setDamageLevel("manual");
-        return;
       }
-      const result = await buildingDamage.classifyFromUri(photo.uri);
-      setDamageLevel(result.level as DamageLevel);
+
+      // 状況説明の抽出とセット
+      const descMatch = result.match(/【状況説明】(.*)/s);
+      if (descMatch && descMatch[1]) {
+        setContent(descMatch[1].trim());
+      } else if (result.length > 5) {
+        // 形式が違っても、ある程度長さがあればそのままセット
+        setContent(result.replace(/【被害レベル】Lv[1-3]/, "").trim());
+      }
     } catch (e) {
-      console.error("[BuildingDamage] classifyFromUri failed:", e);
+      console.error("[Gemma] Analysis failed:", e);
       setDamageLevel("manual");
     } finally {
       setAnalyzing(false);
     }
   };
+
 
   const resetPhoto = () => {
     setPhotoUri(null);

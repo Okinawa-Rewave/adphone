@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(find /c/my-app -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -exec grep -l \"AsyncStorage\" {} \\\\;)",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "Bash(find *)"
     ]
   }
 }
