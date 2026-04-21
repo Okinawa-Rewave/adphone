@@ -93,6 +93,7 @@ export default function RootLayout() {
                   <Stack.Screen name="disaster/manual" />
                   <Stack.Screen name="disaster/emergency-contacts" />
                   <Stack.Screen name="ai/index" />
+                  <Stack.Screen name="demo/index" />
                   <Stack.Screen name="+not-found" />
                 </Stack>
                 <RootOverlays />
