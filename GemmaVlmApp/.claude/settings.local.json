@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(adb devices:*)",
+      "Bash(java --version)",
+      "Bash(npx react-native:*)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill:*)",
+      "Bash(cmd:*)",
+      "Bash(powershell:*)",
+      "Bash(\"/c/Users/mi221310/g_ai/GemmaVlmApp/android/gradlew.bat\" app:installDebug -PreactNativeDevServerPort=8081)",
+      "Bash(./gradlew.bat app:installDebug -PreactNativeDevServerPort=8081)",
+      "Bash(adb reverse:*)",
+      "Bash(adb shell:*)",
+      "Bash(xargs grep:*)",
+      "Bash(adb push:*)",
+      "Bash(MSYS_NO_PATHCONV=1 adb shell:*)",
+      "Bash(MSYS_NO_PATHCONV=1 adb push:*)",
+      "Bash(MSYS_NO_PATHCONV=1 adb reverse tcp:8081 tcp:8081)",
+      "Bash(adb kill-server:*)",
+      "Bash(adb start-server:*)"
+    ]
+  }
+}
