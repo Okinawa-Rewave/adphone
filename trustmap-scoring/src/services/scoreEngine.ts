@@ -4,10 +4,17 @@ import { cluster }          from './clusterEngine'
 import { decay }            from '../utils/decay'
 
 const OFFICIAL_WEIGHT = 5.0
-const NORMAL_WEIGHT   = 1.0
 
-function issuerWeight(issuerType: number): number {
-  return issuerType === 1 ? OFFICIAL_WEIGHT : NORMAL_WEIGHT
+/**
+ * 発行者の重みを計算する。
+ * - 公式（issuerType=1）は固定 5.0
+ * - 一般ユーザーは userTrustScore（0-100）に基づき 0.5〜2.0 でスケール
+ *   score=50（デフォルト）→ 1.0、score=100 → 2.0、score=0 → 0.5
+ */
+function issuerWeight(issuerType: number, userTrustScore?: number): number {
+  if (issuerType === 1) return OFFICIAL_WEIGHT
+  const t = (userTrustScore ?? 50) / 100
+  return 0.5 + t * 1.5
 }
 
 export function toStars(score: number): 1 | 2 | 3 {
@@ -18,7 +25,8 @@ export function toStars(score: number): 1 | 2 | 3 {
 
 function calcClusterScore(packets: RawPacket[]): number {
   return packets.reduce((sum, p) => {
-    return sum + decay(p.timestamp) * issuerWeight(p.issuerType)
+    const userScore = (p as any).userTrustScore as number | undefined
+    return sum + decay(p.timestamp) * issuerWeight(p.issuerType, userScore)
   }, 0)
 }
 

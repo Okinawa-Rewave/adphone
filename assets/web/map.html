@@ -784,6 +784,20 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <body>
     <div id="map"></div>
     <div id="statusToast"></div>
+    <!-- 自動タイル取得の進捗（GPS連動プリフェッチ用） -->
+    <div id="dlToast" style="
+        display: none;
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        z-index: 10000;
+        background: rgba(0,0,0,0.72);
+        color: #fff;
+        font-size: 12px;
+        padding: 6px 12px;
+        border-radius: 20px;
+        pointer-events: none;
+    "></div>
 
     <!-- オフライン保存バー（WebView内で表示） -->
     <div id="offlineBar">
@@ -1535,6 +1549,83 @@ svg.leaflet-image-layer.leaflet-interactive path {
             ensureOfflineLayer().then(function() { ensureSaveControl(); });
         }, 2500);
 
+        // ── GPS連動: 周辺タイル自動キャッシュ（IndexedDB）────────────────
+        // updateUsers のたびに現在地周辺を取得。前回から DELTA 未満の移動ならスキップ。
+        var _downloadedCenterLat = null;
+        var _downloadedCenterLng = null;
+        var _autoPreDlBusy = false;
+
+        function showDlToast(msg) {
+            var el = document.getElementById('dlToast');
+            if (!el) return;
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+        function hideDlToast() {
+            var el = document.getElementById('dlToast');
+            if (!el) return;
+            el.style.display = 'none';
+        }
+
+        async function preDownloadArea(centerLat, centerLng) {
+            if (!navigator.onLine) return;
+            if (_autoPreDlBusy) return;
+            var DELTA = 0.05;
+            if (_downloadedCenterLat !== null) {
+                var dLat = centerLat - _downloadedCenterLat;
+                var dLng = centerLng - _downloadedCenterLng;
+                if (Math.sqrt(dLat * dLat + dLng * dLng) < DELTA) return;
+            }
+            _autoPreDlBusy = true;
+            try {
+                await ensureOfflineLayer();
+                if (!tileLayer || typeof tileLayer.getTileUrls !== 'function') return;
+
+                _downloadedCenterLat = centerLat;
+                _downloadedCenterLng = centerLng;
+                var MIN_ZOOM = 13;
+                var MAX_ZOOM = 16;
+                var latlngBounds = L.latLngBounds(
+                    L.latLng(centerLat - DELTA, centerLng - DELTA),
+                    L.latLng(centerLat + DELTA, centerLng + DELTA)
+                );
+
+                var allUnsaved = [];
+                for (var z = MIN_ZOOM; z <= MAX_ZOOM; z++) {
+                    var area = L.bounds(
+                        map.project(latlngBounds.getNorthWest(), z),
+                        map.project(latlngBounds.getSouthEast(), z)
+                    );
+                    var tiles = tileLayer.getTileUrls(area, z);
+                    for (var i = 0; i < tiles.length; i++) {
+                        if (!(await LeafletOffline.hasTile(tiles[i].key))) {
+                            allUnsaved.push(tiles[i]);
+                        }
+                    }
+                }
+
+                if (allUnsaved.length === 0) return;
+
+                var saved = 0;
+                showDlToast('🗺️ マップ取得中 0 / ' + allUnsaved.length);
+                for (var j = 0; j < allUnsaved.length; j++) {
+                    try {
+                        var blob = await LeafletOffline.downloadTile(allUnsaved[j].url);
+                        await LeafletOffline.saveTile(allUnsaved[j], blob);
+                        saved++;
+                        showDlToast('🗺️ マップ取得中 ' + saved + ' / ' + allUnsaved.length);
+                    } catch (e) { /* ネットワークエラーは無視して継続 */ }
+                }
+                if (saved > 0) {
+                    setTimeout(function() { try { checkOfflineBar(); } catch (e2) {} }, 400);
+                }
+            } catch (e) { /* ensureOfflineLayer 失敗時は何もしない */ }
+            finally {
+                _autoPreDlBusy = false;
+                hideDlToast();
+            }
+        }
+
         // ── 以下は既存コードそのまま ──────────────────────────
 
         var routeLayer        = null;
@@ -1855,7 +1946,14 @@ svg.leaflet-image-layer.leaflet-interactive path {
                 }
 
                 if (message.type === 'updateUsers') {
-                    message.users.forEach(function(u) {
+                    var users = message.users || [];
+                    if (users.length > 0) {
+                        var u0 = users[0];
+                        if (typeof u0.lat === 'number' && typeof u0.lng === 'number') {
+                            void preDownloadArea(u0.lat, u0.lng);
+                        }
+                    }
+                    users.forEach(function(u) {
                         var icon = L.divIcon({
                             className: 'dot-icon',
                             html: '<div class="dot dot-md bg-blue"></div>',
@@ -2030,6 +2128,13 @@ svg.leaflet-image-layer.leaflet-interactive path {
                     ensureOfflineLayer().then(function() {
                         preDownloadJapan(minZ, maxZ);
                     });
+                }
+
+                if (message.type === 'setOnlineStatus') {
+                    if (message.isOnline && tileLayer) {
+                        try { tileLayer.redraw(); } catch (e) {}
+                    }
+                    try { checkOfflineBar(); } catch (e2) {}
                 }
 
             } catch (err) { console.error('Map JS Error: ' + err); }

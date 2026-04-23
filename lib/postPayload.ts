@@ -1,4 +1,4 @@
-import type { DisasterType, NotificationItem } from "@/contexts/NotificationContext";
+import type { DisasterType, NotificationItem, TrustLevel } from "@/contexts/NotificationContext";
 import type { DamageLevel } from "@/constants/BuildingDamage";
 import { LEVEL_CONFIG } from "@/constants/BuildingDamage";
 
@@ -92,10 +92,17 @@ export function decodePayload(s: string): PostPayload | null {
   }
 }
 
+/** 投稿・BLE・TrustMap のパケットで共有する決定論的 ID */
+export function postPayloadStableId(
+  p: Pick<PostPayload, "timestamp" | "disasterType" | "text">
+): string {
+  return `adph-${p.timestamp}-${p.disasterType}-${p.text.slice(0, 8).replace(/\s/g, "")}`;
+}
+
 /** PostPayload を NotificationItem に変換（フィード表示用） */
 export function payloadToNotificationItem(
   p: PostPayload,
-  opts?: { author?: string }
+  opts?: { author?: string; authorUid?: string; trustLevel?: TrustLevel; trustScore?: number }
 ): NotificationItem {
   const tsMs = p.timestamp * 1000;
   const date = new Date(tsMs);
@@ -112,17 +119,20 @@ export function payloadToNotificationItem(
   return {
     // タイムスタンプ+種別+テキスト先頭8字から決定論的IDを生成。
     // 送信側の即時追加とBLE受信側の追加で同一IDになるため、addItem()の重複チェックで片方が弾かれる。
-    id: `adph-${p.timestamp}-${p.disasterType}-${p.text.slice(0, 8).replace(/\s/g, "")}`,
+    id: postPayloadStableId(p),
     text,
     time,
     unread: true,
     disasterType: p.disasterType,
-    trustLevel: "unverified",
-    trustScore: 30,
+    trustLevel: opts?.trustLevel ?? "unverified",
+    trustScore: opts?.trustScore ?? 30,
     timestamp: tsMs,
     author: opts?.author ?? "市民レポート",
+    authorUid: opts?.authorUid,
     location,
     helpfulCount: 0,
     nearbyConfirmations: 0,
+    agreeCount: 0,
+    disagreeCount: 0,
   };
 }

@@ -31,7 +31,7 @@ function groupByTime(items: NotificationItem[]): Group[] {
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const { items, unreadCount, markAllRead, markRead, signPost, toggleHelpful } = useNotifications();
+  const { items, unreadCount, markAllRead, markRead, signPost, toggleHelpful, disagreePost } = useNotifications();
   const groups = useMemo(() => groupByTime(items), [items]);
 
   const handlePress = (id: string, href?: string) => {
@@ -85,6 +85,7 @@ export default function NotificationsScreen() {
                     onPress={() => handlePress(item.id, item.href)}
                     onSign={() => signPost(item.id)}
                     onHelpful={() => toggleHelpful(item.id)}
+                    onDisagree={() => disagreePost(item.id)}
                   />
                 ))}
               </View>

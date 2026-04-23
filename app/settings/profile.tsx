@@ -1,8 +1,11 @@
 // app/settings/profile.tsx — プロフィール設定画面
 import { auth, db } from "@/lib/firebase";
 import { signInAnonymously } from "firebase/auth";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
+import { TrustMeter } from "@/components/TrustMeter";
+import { TrustBadge } from "@/components/TrustBadge";
+import type { TrustLevel } from "@/contexts/NotificationContext";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -16,6 +19,12 @@ import {
 import { Design } from "@/constants/Design";
 import { ScreenLayout } from "@/components/ScreenLayout";
 
+function scoreToLevel(s: number): TrustLevel {
+  if (s >= 80) return "verified";
+  if (s >= 50) return "partial";
+  return "unverified";
+}
+
 // ─── アバター背景色（UIDのcharCode合計 % 360 をhueとしたHSL） ───────────
 function uidToAvatarColor(uid: string): string {
   const hue = [...uid].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
@@ -24,6 +33,7 @@ function uidToAvatarColor(uid: string): string {
 
 export default function ProfileScreen() {
   const [uid, setUid] = useState("");
+  const [userTrustScore, setUserTrustScore] = useState(50);
 
   // ── 表示名 ──
   const [nickname, setNickname] = useState("");
@@ -46,7 +56,7 @@ export default function ProfileScreen() {
     phone !== savedPhone ||
     area !== savedArea;
 
-  // ── 初期ロード ──
+  // ── 初期ロード（プロフィール項目は一度だけ取得） ──
   useEffect(() => {
     (async () => {
       if (!auth.currentUser) await signInAnonymously(auth);
@@ -65,9 +75,21 @@ export default function ProfileScreen() {
         setSavedPhone(p);
         setArea(a);
         setSavedArea(a);
+        setUserTrustScore(d.userTrustScore ?? 50);
       }
     })();
   }, []);
+
+  // ── userTrustScore をリアルタイム監視 ──
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = onSnapshot(doc(db, "users", uid), (snap) => {
+      if (snap.exists()) {
+        setUserTrustScore(snap.data().userTrustScore ?? 50);
+      }
+    });
+    return unsub;
+  }, [uid]);
 
   // ── 保存処理 ──
   const saveProfile = async () => {
@@ -174,6 +196,17 @@ export default function ProfileScreen() {
                 style={styles.fieldInput}
               />
             </View>
+
+            <View style={styles.divider} />
+
+            {/* 信頼度スコア */}
+            <View style={styles.fieldRow}>
+              <View style={styles.trustLabelRow}>
+                <Text style={styles.fieldLabel}>信頼度スコア</Text>
+                <TrustBadge level={scoreToLevel(userTrustScore)} size="sm" />
+              </View>
+              <TrustMeter score={userTrustScore} level={scoreToLevel(userTrustScore)} />
+            </View>
           </View>
 
           {/* ③ 保存ボタン */}
@@ -261,6 +294,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Design.colors.textMuted,
     marginBottom: 4,
+  },
+  trustLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
   },
   fieldInput: {
     borderWidth: 0,

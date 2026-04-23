@@ -1,12 +1,12 @@
 package com.ic221210.myapp
+import expo.modules.splashscreen.SplashScreenManager
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.Log
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import android.os.Environment
+import android.provider.Settings
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -14,132 +14,65 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnable
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 import expo.modules.ReactActivityDelegateWrapper
-import expo.modules.splashscreen.SplashScreenManager
-
-import org.tensorflow.lite.Interpreter
 
 class MainActivity : ReactActivity() {
-
   override fun onCreate(savedInstanceState: Bundle?) {
-    // Expo splash screen (★1回だけ)
+    // Set the theme to AppTheme BEFORE onCreate to support
+    // coloring the background, status bar, and navigation bar.
+    // This is required for expo-splash-screen.
+    // setTheme(R.style.AppTheme);
+    // @generated begin expo-splashscreen - expo prebuild (DO NOT MODIFY) sync-f3ff59a738c56c9a6119210cb55f0b613eb8b6af
     SplashScreenManager.registerOnActivity(this)
-
-    // Expo 推奨：savedInstanceState は null
-    super.onCreate(null)
-
-    // ★ TFLite テスト実行（ログ確認用）
-    runYoloTest()
-  }
-
-  /**
-   * Bitmap → TFLite 用 ByteBuffer
-   * YOLO (1, 640, 640, 3) float32 入力
-   */
-  private fun bitmapToByteBuffer(bitmap: Bitmap): ByteBuffer {
-    val inputSize = 640
-    val buffer =
-      ByteBuffer.allocateDirect(1 * inputSize * inputSize * 3 * 4)
-    buffer.order(ByteOrder.nativeOrder())
-
-    val resized =
-      Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-
-    val intValues = IntArray(inputSize * inputSize)
-    resized.getPixels(
-      intValues,
-      0,
-      inputSize,
-      0,
-      0,
-      inputSize,
-      inputSize
-    )
-
-    var pixelIndex = 0
-    for (y in 0 until inputSize) {
-      for (x in 0 until inputSize) {
-        val pixel = intValues[pixelIndex++]
-
-        buffer.putFloat(((pixel shr 16) and 0xFF) / 255.0f) // R
-        buffer.putFloat(((pixel shr 8) and 0xFF) / 255.0f)  // G
-        buffer.putFloat((pixel and 0xFF) / 255.0f)          // B
-      }
-    }
-
-    buffer.rewind()
-    return buffer
-  }
-
-  /**
-   * TFLite YOLO テスト実行
-   * assets/model_float32.tflite
-   * assets/test.jpg
-   */
-  private fun runYoloTest() {
-    try {
-      val assetManager = assets
-
-      // ① モデル読み込み
-      val modelBuffer = assetManager.open("model_float32.tflite").use { input ->
-        val bytes = ByteArray(input.available())
-        input.read(bytes)
-        ByteBuffer.allocateDirect(bytes.size).apply {
-          order(ByteOrder.nativeOrder())
-          put(bytes)
-          rewind()
+    // @generated end expo-splashscreen
+    // Android 11+ (API 30+): /sdcard/ への全ファイルアクセス権が必要
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      if (!Environment.isExternalStorageManager()) {
+        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+          data = Uri.parse("package:$packageName")
         }
+        startActivity(intent)
       }
-
-      val interpreter = Interpreter(modelBuffer)
-
-      // ② テスト画像読み込み
-      val bitmap = assetManager.open("test.jpg").use {
-        BitmapFactory.decodeStream(it)
-      }
-
-      // ③ 前処理
-      val input = bitmapToByteBuffer(bitmap)
-
-      // ④ 出力バッファ [1, 5, 8400]
-      val output = Array(1) { Array(5) { FloatArray(8400) } }
-
-      // ⑤ 推論
-      interpreter.run(input, output)
-
-      // ⑥ 結果確認
-      var count = 0
-      for (i in 0 until 8400) {
-        if (output[0][4][i] > 0.5f) count++
-      }
-
-      Log.d("YOLO_TEST", "Detected objects = $count")
-
-    } catch (e: Exception) {
-      Log.e("YOLO_TEST", "YOLO test failed", e)
     }
+    super.onCreate(null)
   }
 
+  /**
+   * Returns the name of the main component registered from JavaScript. This is used to schedule
+   * rendering of the component.
+   */
   override fun getMainComponentName(): String = "main"
 
+  /**
+   * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]
+   * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]
+   */
   override fun createReactActivityDelegate(): ReactActivityDelegate {
     return ReactActivityDelegateWrapper(
-      this,
-      BuildConfig.IS_NEW_ARCHITECTURE_ENABLED,
-      object : DefaultReactActivityDelegate(
-        this,
-        mainComponentName,
-        fabricEnabled
-      ) {}
-    )
+          this,
+          BuildConfig.IS_NEW_ARCHITECTURE_ENABLED,
+          object : DefaultReactActivityDelegate(
+              this,
+              mainComponentName,
+              fabricEnabled
+          ){})
   }
 
+  /**
+    * Align the back button behavior with Android S
+    * where moving root activities to background instead of finishing activities.
+    * @see <a href="https://developer.android.com/reference/android/app/Activity#onBackPressed()">onBackPressed</a>
+    */
   override fun invokeDefaultOnBackPressed() {
-    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
-      if (!moveTaskToBack(false)) {
-        super.invokeDefaultOnBackPressed()
+      if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
+          if (!moveTaskToBack(false)) {
+              // For non-root activities, use the default implementation to finish them.
+              super.invokeDefaultOnBackPressed()
+          }
+          return
       }
-      return
-    }
-    super.invokeDefaultOnBackPressed()
+
+      // Use the default back button implementation on Android S
+      // because it's doing more than [Activity.moveTaskToBack] in fact.
+      super.invokeDefaultOnBackPressed()
   }
 }
