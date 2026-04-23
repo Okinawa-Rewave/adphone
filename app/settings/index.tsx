@@ -40,17 +40,6 @@ export default function SettingsIndexScreen() {
           </TouchableOpacity>
         </Link>
 
-        <Text style={[styles.sectionTitle, { marginTop: Design.spacing.md }]}>開発・デモ</Text>
-
-        <Link href={"/demo" as any} asChild>
-          <TouchableOpacity style={[styles.item, styles.demoItem]} activeOpacity={0.7}>
-            <View style={styles.itemLeft}>
-              <Text style={[styles.itemTitle, styles.demoTitle]}>信頼度デモモード</Text>
-              <Text style={styles.itemDesc}>信頼度の仕組みをステップ形式で確認</Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
-        </Link>
       </View>
     </ScreenLayout>
   );
@@ -96,12 +85,5 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: Design.colors.textMuted,
     marginLeft: Design.spacing.sm,
-  },
-  demoItem: {
-    borderColor: Design.colors.primary,
-    backgroundColor: Design.colors.primaryMuted,
-  },
-  demoTitle: {
-    color: Design.colors.primary,
   },
 });
