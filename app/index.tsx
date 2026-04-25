@@ -21,7 +21,7 @@ const MIN_SPIN_MS = 500;
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { items, markRead, signPost, toggleHelpful, refresh } = useNotifications();
+  const { items, markRead, signPost, toggleHelpful, disagreePost, refresh } = useNotifications();
   const [refreshing, setRefreshing] = useState(false);
   const startedAtRef = useRef<number | null>(null);
 
@@ -91,6 +91,7 @@ export default function HomeScreen() {
               onPress={() => handlePress(item.id, item.href)}
               onSign={() => signPost(item.id)}
               onHelpful={() => toggleHelpful(item.id)}
+              onDisagree={() => disagreePost(item.id)}
             />
           ))
         )}

@@ -1,6 +1,7 @@
 // contexts/NotificationContext.tsx
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { castVote } from "@/lib/userTrust";
 
 // ─── 型定義 ───────────────────────────────────────────────
 export type DisasterType =
@@ -35,6 +36,11 @@ export type NotificationItem = {
   hasSigned?: boolean;
   isHelpful?: boolean;
   helpfulCount?: number;
+  authorUid?: string;
+  authorTrustScore?: number;  // 投稿者の信頼度スコア（0〜100）
+  agreeCount?: number;
+  disagreeCount?: number;
+  myVote?: "agree" | "disagree" | null;
 };
 
 // ─── デフォルトデータ ────────────────────────────────────
@@ -119,6 +125,7 @@ type NotificationContextValue = {
   toggleRead: (id: string) => void;
   signPost: (id: string) => void;
   toggleHelpful: (id: string) => void;
+  disagreePost: (id: string) => void;
   refresh: () => Promise<void>;
   lastRefreshedAt: Date | null;
 };
@@ -177,9 +184,20 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const signPost = useCallback((id: string) => {
     setItems((prev) => {
+      const target = prev.find((x) => x.id === id);
+      const hasSigned = target ? !target.hasSigned : true;
+
+      // Firestoreへの投票（authorUidがある投稿のみ）
+      if (target?.authorUid) {
+        const prevVote = target.myVote ?? null;
+        const nextVote = hasSigned ? "agree" : null;
+        if (nextVote !== prevVote) {
+          castVote(id, target.authorUid, "agree").catch(() => {});
+        }
+      }
+
       const next = prev.map((x) => {
         if (x.id !== id) return x;
-        const hasSigned = !x.hasSigned;
         const newSig: Signature = {
           id: `sig-${Date.now()}`,
           name: "あなた",
@@ -187,13 +205,47 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           timestamp: Date.now(),
           isOfficial: false,
         };
+        const prevAgree = x.agreeCount ?? 0;
         return {
           ...x,
           hasSigned,
+          myVote: hasSigned ? "agree" : null,
           signatures: hasSigned
             ? [...(x.signatures ?? []), newSig]
             : (x.signatures ?? []).filter((s) => s.name !== "あなた"),
           trustScore: Math.min(100, (x.trustScore ?? 0) + (hasSigned ? 5 : -5)),
+          agreeCount: hasSigned ? prevAgree + 1 : Math.max(0, prevAgree - 1),
+        };
+      });
+      persist(next);
+      return next;
+    });
+  }, [persist]);
+
+  const disagreePost = useCallback((id: string) => {
+    setItems((prev) => {
+      const target = prev.find((x) => x.id === id);
+
+      // Firestoreへの投票（authorUidがある投稿のみ）
+      if (target?.authorUid) {
+        castVote(id, target.authorUid, "disagree").catch(() => {});
+      }
+
+      const next = prev.map((x) => {
+        if (x.id !== id) return x;
+        const isDisagreeing = x.myVote !== "disagree";
+        const prevDisagree = x.disagreeCount ?? 0;
+        return {
+          ...x,
+          myVote: isDisagreeing ? "disagree" : null,
+          hasSigned: isDisagreeing ? false : x.hasSigned,
+          trustScore: Math.max(0, (x.trustScore ?? 0) + (isDisagreeing ? -5 : 5)),
+          disagreeCount: isDisagreeing
+            ? prevDisagree + 1
+            : Math.max(0, prevDisagree - 1),
+          agreeCount: isDisagreeing && x.myVote === "agree"
+            ? Math.max(0, (x.agreeCount ?? 0) - 1)
+            : x.agreeCount,
         };
       });
       persist(next);
@@ -250,7 +302,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   return (
     <NotificationContext.Provider
-      value={{ items, unreadCount, addItem, markRead, markAllRead, toggleRead, signPost, toggleHelpful, refresh, lastRefreshedAt }}
+      value={{ items, unreadCount, addItem, markRead, markAllRead, toggleRead, signPost, toggleHelpful, disagreePost, refresh, lastRefreshedAt }}
     >
       {children}
     </NotificationContext.Provider>

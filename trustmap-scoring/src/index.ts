@@ -21,12 +21,13 @@ export class TrustMapEngine {
   // 自分の観測を記録してブロードキャスト用パケットを返す
   recordObservation(
     params:    Omit<RawPacket, 'id' | 'timestamp'>,
-    signature: string
+    signature: string,
+    opts?:     { id?: string; timestamp?: number }
   ): RawPacket {
     const packet: RawPacket = {
       ...params,
-      id:        Math.random().toString(36).slice(2, 10),
-      timestamp: Math.floor(Date.now() / 1000),
+      id:        opts?.id ?? Math.random().toString(36).slice(2, 10),
+      timestamp: opts?.timestamp ?? Math.floor(Date.now() / 1000),
       signature,
     }
     this.db.save(packet)

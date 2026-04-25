@@ -29,10 +29,14 @@ import * as Location from "expo-location";
 import { Design } from "@/constants/Design";
 import { LEVEL_CONFIG, type DamageLevel } from "@/constants/BuildingDamage";
 import { encodePayload, payloadToNotificationItem } from "@/lib/postPayload";
+import { computeFeedTrustForPostPayload } from "@/lib/trustFeedSync";
 import { useBleContext } from "@/contexts/BleContext";
 import { useNotifications } from "@/contexts/NotificationContext";
 import type { DisasterType } from "@/contexts/NotificationContext";
 import { useDisasterReport } from "@/contexts/DisasterReportContext";
+import GemmaModule from "@/lib/gemma";
+
+const GEMMA_MODEL_PATH = "/sdcard/gemma-3n-E4B-it-int4.litertlm";
 
 const DISASTER_OPTIONS: { type: DisasterType; label: string; Icon: any; color: string }[] = [
   { type: "earthquake", label: "地震",     Icon: AlertTriangle, color: Design.colors.disasterEarthquake },
@@ -120,21 +124,40 @@ export function CreatePostModal({ visible, onClose }: Props) {
     setShowCamera(false);
     setAnalyzing(true);
     try {
-      const buildingDamage = NativeModules.BuildingDamage;
-      if (!buildingDamage) {
-        // ネイティブモジュール未搭載ビルド → 手動選択モードへ
+      // モデルが未初期化の場合（起動時の初期化に失敗していた場合など）ここで再試行
+      await GemmaModule.initializeModel(GEMMA_MODEL_PATH);
+
+      const prompt = "この画像に映っている建物の被害状況を分析してください。回答は以下の形式で始めてください：\n【被害レベル】Lv1, Lv2, Lv3のいずれか\n【状況説明】簡潔な説明";
+      const result = await GemmaModule.generateResponseWithImage(prompt, photo.uri);
+      console.log("[Gemma] Analysis Result:", result);
+
+      // 被害レベルの抽出 (Lv1, Lv2, Lv3)
+      if (result.includes("Lv3")) {
+        setDamageLevel("Lv3");
+      } else if (result.includes("Lv2")) {
+        setDamageLevel("Lv2");
+      } else if (result.includes("Lv1")) {
+        setDamageLevel("Lv1");
+      } else {
         setDamageLevel("manual");
-        return;
       }
-      const result = await buildingDamage.classifyFromUri(photo.uri);
-      setDamageLevel(result.level as DamageLevel);
+
+      // 状況説明の抽出とセット
+      const descMatch = result.match(/【状況説明】(.*)/s);
+      if (descMatch && descMatch[1]) {
+        setContent(descMatch[1].trim());
+      } else if (result.length > 5) {
+        // 形式が違っても、ある程度長さがあればそのままセット
+        setContent(result.replace(/【被害レベル】Lv[1-3]/, "").trim());
+      }
     } catch (e) {
-      console.error("[BuildingDamage] classifyFromUri failed:", e);
+      console.error("[Gemma] Analysis failed:", e);
       setDamageLevel("manual");
     } finally {
       setAnalyzing(false);
     }
   };
+
 
   const resetPhoto = () => {
     setPhotoUri(null);
@@ -155,12 +178,23 @@ export function CreatePostModal({ visible, onClose }: Props) {
         timestamp: Math.floor(Date.now() / 1000),
       };
 
-      // 投稿者自身のフィードに即時追加
-      const localItem = payloadToNotificationItem(postPayload, { author: "あなた" });
-      addItem(localItem);
+      // マップ（TrustMapEngine）へ先に反映 → クラスタスコアとフィード信頼度を一致させる
+      submitReport({
+        disasterType: postPayload.disasterType,
+        damageLevel:  postPayload.damageLevel,
+        lat:          postPayload.lat,
+        lon:          postPayload.lon,
+        text:         postPayload.text,
+        timestamp:    postPayload.timestamp,
+      });
 
-      // マップへ即時反映（決定論的IDでTrustMapに投入）
-      submitReport(postPayload);
+      const { trustLevel, trustScore } = computeFeedTrustForPostPayload(postPayload);
+      const localItem = payloadToNotificationItem(postPayload, {
+        author: "あなた",
+        trustLevel,
+        trustScore,
+      });
+      addItem(localItem);
 
       // BLE送信（オフライン対応・プライマリパス）
       if (bleState === "connected") {
@@ -236,15 +270,7 @@ export function CreatePostModal({ visible, onClose }: Props) {
                 <TouchableOpacity
                   key={type}
                   style={[styles.typeBtn, active && { borderColor: color, backgroundColor: color + "18" }]}
-                  onPress={() => {
-                    const next = active ? null : type;
-                    setSelectedType(next);
-                    if (next !== "collapse") {
-                      setPhotoUri(null);
-                      setDamageLevel(null);
-                      setShowCamera(false);
-                    }
-                  }}
+                  onPress={() => setSelectedType(active ? null : type)}
                   activeOpacity={0.7}
                 >
                   <Icon size={18} color={active ? color : Design.colors.textMuted} strokeWidth={2} />
@@ -280,60 +306,57 @@ export function CreatePostModal({ visible, onClose }: Props) {
             </View>
           )}
 
-          {/* 写真・崩壊度判定（建物崩壊のときのみ） */}
-          {selectedType === "collapse" && (
-            <>
-              <Text style={styles.fieldLabel}>写真（任意）</Text>
-              {!photoUri && (
-                <TouchableOpacity style={styles.cameraBtn} onPress={openCamera} activeOpacity={0.7}>
-                  <Camera size={18} color={Design.colors.primary} strokeWidth={2} />
-                  <Text style={styles.cameraBtnText}>建物を撮影して崩壊度を判定</Text>
-                </TouchableOpacity>
-              )}
-              {photoUri && (
-                <View style={styles.photoResult}>
-                  <Image source={{ uri: photoUri }} style={styles.thumbnail} resizeMode="cover" />
-                  <View style={styles.damageInfo}>
-                    {analyzing ? (
-                      <ActivityIndicator size="small" color={Design.colors.primary} />
-                    ) : damageLevel === "manual" ? (
-                      <>
-                        <Text style={styles.manualLabel}>損傷レベルを選択</Text>
-                        <View style={styles.manualBtns}>
-                          {(["Lv1", "Lv2", "Lv3"] as const).map((lv) => (
-                            <TouchableOpacity
-                              key={lv}
-                              style={[styles.manualBtn, { borderColor: LEVEL_CONFIG[lv].color }]}
-                              onPress={() => setDamageLevel(lv)}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={[styles.manualBtnText, { color: LEVEL_CONFIG[lv].color }]}>
-                                {lv}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </>
-                    ) : damageLevel ? (
-                      <View style={[styles.damageBadge, {
-                        backgroundColor: LEVEL_CONFIG[damageLevel].bg,
-                        borderColor: LEVEL_CONFIG[damageLevel].color,
-                      }]}>
-                        <Text style={[styles.damageBadgeText, { color: LEVEL_CONFIG[damageLevel].color }]}>
-                          {damageLevel}　{LEVEL_CONFIG[damageLevel].label}
-                        </Text>
-                        <TouchableOpacity onPress={() => setDamageLevel("manual")}>
-                          <Text style={styles.changeText}>変更</Text>
+          {/* 写真・崩壊度判定 */}
+          <Text style={styles.fieldLabel}>写真（任意）</Text>
+          {!photoUri && (
+            <TouchableOpacity style={styles.cameraBtn} onPress={openCamera} activeOpacity={0.7}>
+              <Camera size={18} color={Design.colors.primary} strokeWidth={2} />
+              <Text style={styles.cameraBtnText}>建物を撮影して崩壊度を判定</Text>
+            </TouchableOpacity>
+          )}
+          {photoUri && (
+            <View style={styles.photoResult}>
+              <Image source={{ uri: photoUri }} style={styles.thumbnail} resizeMode="cover" />
+              <View style={styles.damageInfo}>
+                {analyzing ? (
+                  <ActivityIndicator size="small" color={Design.colors.primary} />
+                ) : damageLevel === "manual" ? (
+                  // AI判定不可 → 手動選択
+                  <>
+                    <Text style={styles.manualLabel}>損傷レベルを選択</Text>
+                    <View style={styles.manualBtns}>
+                      {(["Lv1", "Lv2", "Lv3"] as const).map((lv) => (
+                        <TouchableOpacity
+                          key={lv}
+                          style={[styles.manualBtn, { borderColor: LEVEL_CONFIG[lv].color }]}
+                          onPress={() => setDamageLevel(lv)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.manualBtnText, { color: LEVEL_CONFIG[lv].color }]}>
+                            {lv}
+                          </Text>
                         </TouchableOpacity>
-                      </View>
-                    ) : null}
-                    <TouchableOpacity onPress={resetPhoto}>
-                      <Text style={styles.retryText}>再撮影</Text>
+                      ))}
+                    </View>
+                  </>
+                ) : damageLevel ? (
+                  <View style={[styles.damageBadge, {
+                    backgroundColor: LEVEL_CONFIG[damageLevel].bg,
+                    borderColor: LEVEL_CONFIG[damageLevel].color,
+                  }]}>
+                    <Text style={[styles.damageBadgeText, { color: LEVEL_CONFIG[damageLevel].color }]}>
+                      {damageLevel}　{LEVEL_CONFIG[damageLevel].label}
+                    </Text>
+                    <TouchableOpacity onPress={() => setDamageLevel("manual")}>
+                      <Text style={styles.changeText}>変更</Text>
                     </TouchableOpacity>
                   </View>
-                </View>
-              )}
-            </>
+                ) : null}
+                <TouchableOpacity onPress={resetPhoto}>
+                  <Text style={styles.retryText}>再撮影</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           )}
 
           {/* 内容 */}
