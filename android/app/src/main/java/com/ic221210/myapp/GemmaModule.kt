@@ -25,10 +25,17 @@ class GemmaModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
         return "GemmaModule"
     }
 
+    private fun logMemory(tag: String) {
+        val rt = Runtime.getRuntime()
+        val usedMB = (rt.totalMemory() - rt.freeMemory()) / 1_048_576
+        val maxMB  = rt.maxMemory() / 1_048_576
+        android.util.Log.d("GemmaModule", "[$tag] メモリ: ${usedMB}MB 使用 / ${maxMB}MB 上限")
+    }
+
     @ReactMethod
     fun initializeModel(modelPath: String, promise: Promise) {
-        // Already initialized — skip costly re-init
         if (llmInference != null) {
+            android.util.Log.d("GemmaModule", "[init] 既に初期化済み → スキップ")
             promise.resolve(true)
             return
         }
@@ -36,32 +43,30 @@ class GemmaModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
             try {
                 val modelFile = File(modelPath)
                 if (!modelFile.exists()) {
+                    android.util.Log.e("GemmaModule", "[init] モデルファイルが見つかりません: $modelPath")
                     promise.reject("MODEL_NOT_FOUND", "Model file not found at: $modelPath")
                     return@launch
                 }
+                val fileSizeMB = modelFile.length() / 1_048_576
+                android.util.Log.i("GemmaModule", "[init] モデル読み込み開始 (${fileSizeMB}MB): $modelPath")
+                logMemory("init 開始前")
+                val t0 = System.currentTimeMillis()
 
-                val inference = try {
-                    val gpuOptions = LlmInference.LlmInferenceOptions.builder()
-                        .setModelPath(modelPath)
-                        .setMaxTokens(512)
-                        .setMaxNumImages(1)
-                        .setPreferredBackend(LlmInference.Backend.GPU)
-                        .build()
-                    android.util.Log.d("GemmaModule", "Trying GPU backend...")
-                    LlmInference.createFromOptions(reactApplicationContext, gpuOptions)
-                } catch (e: Exception) {
-                    android.util.Log.w("GemmaModule", "GPU failed, falling back to CPU: ${e.message}")
-                    val cpuOptions = LlmInference.LlmInferenceOptions.builder()
-                        .setModelPath(modelPath)
-                        .setMaxTokens(512)
-                        .setMaxNumImages(1)
-                        .build()
-                    LlmInference.createFromOptions(reactApplicationContext, cpuOptions)
-                }
+                android.util.Log.d("GemmaModule", "[init] CPU バックエンドで初期化中...")
+                val cpuOptions = LlmInference.LlmInferenceOptions.builder()
+                    .setModelPath(modelPath)
+                    .setMaxTokens(128)
+                    .setMaxNumImages(1)
+                    .build()
+                val inference = LlmInference.createFromOptions(reactApplicationContext, cpuOptions)
 
                 llmInference = inference
+                val elapsed = System.currentTimeMillis() - t0
+                android.util.Log.i("GemmaModule", "[init] 初期化完了 (${elapsed}ms)")
+                logMemory("init 完了後")
                 promise.resolve(true)
             } catch (e: Exception) {
+                android.util.Log.e("GemmaModule", "[init] 初期化失敗: ${e.message}")
                 promise.reject("INIT_ERROR", "Gemma Init Failed: ${e.message}")
             }
         }
@@ -105,21 +110,33 @@ class GemmaModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
     @ReactMethod
     fun generateResponseWithImage(prompt: String, imagePath: String, promise: Promise) {
         scope.launch {
+            val t0 = System.currentTimeMillis()
+            android.util.Log.i("GemmaModule", "[vlm] 解析開始")
+            logMemory("vlm 開始前")
             try {
                 val inference = llmInference ?: throw Exception("Model not initialized.")
                 val cleanPath = if (imagePath.startsWith("file://")) imagePath.removePrefix("file://") else imagePath
                 val file = File(cleanPath)
                 if (!file.exists()) {
+                    android.util.Log.e("GemmaModule", "[vlm] 画像ファイルが見つかりません: $cleanPath")
                     promise.reject("IMAGE_NOT_FOUND", "Image not found at: $cleanPath")
                     return@launch
                 }
 
+                android.util.Log.d("GemmaModule", "[vlm 1/4] 画像デコード中: $cleanPath")
                 val rawBitmap = BitmapFactory.decodeFile(cleanPath)
                     ?: throw Exception("Failed to decode image.")
+                android.util.Log.d("GemmaModule", "[vlm 1/4] 元サイズ: ${rawBitmap.width}x${rawBitmap.height}")
 
-                val bitmap = resizeBitmap(rawBitmap, 256)
+                val bitmap = resizeBitmap(rawBitmap, 128)
+                if (bitmap !== rawBitmap) rawBitmap.recycle()
+                android.util.Log.d("GemmaModule", "[vlm 1/4] リサイズ後: ${bitmap.width}x${bitmap.height}")
                 val mpImage = BitmapImageBuilder(bitmap).build()
+                bitmap.recycle()
 
+                android.util.Log.d("GemmaModule", "[vlm 2/4] GC + セッション作成中...")
+                logMemory("vlm セッション作成前")
+                val tSession = System.currentTimeMillis()
                 val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
                     .setGraphOptions(
                         GraphOptions.builder()
@@ -127,14 +144,29 @@ class GemmaModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
                             .build()
                     )
                     .build()
+                System.gc()
                 val session = LlmInferenceSession.createFromOptions(inference, sessionOptions)
+                android.util.Log.d("GemmaModule", "[vlm 2/4] セッション作成完了 (${System.currentTimeMillis() - tSession}ms)")
 
-                session.addQueryChunk(prompt)
-                session.addImage(mpImage)
+                android.util.Log.d("GemmaModule", "[vlm 3/4] 推論実行中...")
+                val tInfer = System.currentTimeMillis()
+                val result = try {
+                    session.addQueryChunk(prompt)
+                    session.addImage(mpImage)
+                    session.generateResponse()
+                } finally {
+                    session.close()
+                }
+                android.util.Log.d("GemmaModule", "[vlm 3/4] 推論完了 (${System.currentTimeMillis() - tInfer}ms)")
+                android.util.Log.i("GemmaModule", "[vlm 4/4] 生結果: \"${result.take(200)}\"")
 
-                val result = session.generateResponse()
-                promise.resolve(cleanResult(result))
-            } catch (e: Exception) {
+                val cleaned = cleanResult(result)
+                android.util.Log.i("GemmaModule", "[vlm 4/4] クリーン結果: \"$cleaned\"")
+                android.util.Log.i("GemmaModule", "[vlm] 解析完了 合計${System.currentTimeMillis() - t0}ms")
+                logMemory("vlm 完了後")
+                promise.resolve(cleaned)
+            } catch (e: Throwable) {
+                android.util.Log.e("GemmaModule", "[vlm] 解析失敗 (${System.currentTimeMillis() - t0}ms): ${e::class.simpleName} - ${e.message}")
                 promise.reject("VLM_ERROR", "E4B VLM Error: ${e.message}")
             }
         }

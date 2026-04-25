@@ -4,7 +4,13 @@
       "Bash(find /c/my-app -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -exec grep -l \"AsyncStorage\" {} \\\\;)",
       "Bash(npx vitest:*)",
       "Bash(find *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(npx eas *)",
+      "Bash(xargs grep *)",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('expo', {}\\), indent=2\\)\\)\")",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); deps=d.get\\('dependencies',{}\\); first=list\\(deps.values\\(\\)\\)[0] if deps else {}; print\\(first.get\\('platforms',{}\\).get\\('android',{}\\).get\\('sourceDir','?'\\)\\)\")",
+      "Bash(xargs -d'\\\\n' du -sh)",
+      "Bash(powershell *)"
     ]
   }
 }

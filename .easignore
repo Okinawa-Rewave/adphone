@@ -1,0 +1,45 @@
+# EAS Build ignore file
+# When .easignore exists, .gitignore is NOT automatically applied.
+# So we must include both .gitignore patterns AND EAS-specific exclusions here.
+
+# ---- From .gitignore ----
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+*.pem
+.env*.local
+*.tsbuildinfo
+GemmaVlmApp/
+app-example
+
+# ---- EAS-specific exclusions ----
+# Android build artifacts (contain platform-specific cached paths that break cross-platform builds)
+android/build/
+android/.gradle/
+android/app/build/
+
+# iOS build artifacts
+ios/build/
+ios/Pods/
+ios/.xcode.env.local
+
+# Large model files not needed for build
+*.litertlm
+*.bin
+
+# VS Code / IDE files
+.vscode/

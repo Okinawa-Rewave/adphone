@@ -14,15 +14,13 @@ import { DisasterReportProvider } from "@/contexts/DisasterReportContext";
 import { SideDrawer } from "@/components/SideDrawer";
 import { CreatePostModal } from "@/components/CreatePostModal";
 import { BleToFeedBridge } from "@/components/BleToFeedBridge";
+import { GemmaResultToast } from "@/components/GemmaResultToast";
 
 import { useEffect } from "react";
-import { PermissionsAndroid, Platform } from "react-native";
+import { PermissionsAndroid, Platform, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { initTrustSystem } from "@/lib/userTrust";
-import GemmaModule from "@/lib/gemma";
-
-const GEMMA_MODEL_PATH = "/sdcard/gemma-3n-E4B-it-int4.litertlm";
 
 async function requestPermissions() {
   if (Platform.OS === "android") {
@@ -34,11 +32,6 @@ async function requestPermissions() {
       ]);
       
       console.log("Permissions granted:", results);
-
-      // Gemmaモデルの初期化
-      console.log("Initializing Gemma model...");
-      const success = await GemmaModule.initializeModel(GEMMA_MODEL_PATH);
-      console.log("Gemma model initialized:", success);
     } catch (err) {
       console.warn("Permission or Init error:", err);
     }
@@ -49,11 +42,12 @@ async function requestPermissions() {
 function RootOverlays() {
   const { isCreatePostOpen, closeCreatePost } = useUI();
   return (
-    <>
+    <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
       <BleToFeedBridge />
       <SideDrawer />
       <CreatePostModal visible={isCreatePostOpen} onClose={closeCreatePost} />
-    </>
+      <GemmaResultToast />
+    </View>
   );
 }
 

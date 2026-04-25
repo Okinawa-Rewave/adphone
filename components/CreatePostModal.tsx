@@ -34,6 +34,7 @@ import { useBleContext } from "@/contexts/BleContext";
 import { useNotifications } from "@/contexts/NotificationContext";
 import type { DisasterType } from "@/contexts/NotificationContext";
 import { useDisasterReport } from "@/contexts/DisasterReportContext";
+import { useUI } from "@/contexts/UIContext";
 import GemmaModule from "@/lib/gemma";
 
 const GEMMA_MODEL_PATH = "/sdcard/gemma-3n-E4B-it-int4.litertlm";
@@ -70,18 +71,25 @@ export function CreatePostModal({ visible, onClose }: Props) {
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lon: number } | null>(null);
 
+  const gemmaPromiseRef = useRef<Promise<{ level: DamageLevel; desc: string }> | null>(null);
+
   // BLE
   const { sendText, bleState } = useBleContext();
   // フィード
   const { addItem } = useNotifications();
   // マップ反映
   const { submitReport } = useDisasterReport();
+  // Gemma 結果トースト
+  const { showGemmaResult } = useUI();
 
-  const canSubmit = selectedType && (location.trim() || gpsCoords) && content.trim();
+  const canSubmit = selectedType && (location.trim() || gpsCoords) && (content.trim() || !!photoUri);
 
   // モーダルが開いたときにGPS取得・フォームリセット
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      gemmaPromiseRef.current = null;
+      return;
+    }
     setPhotoUri(null);
     setDamageLevel(null);
     setGpsCoords(null);
@@ -122,44 +130,41 @@ export function CreatePostModal({ visible, onClose }: Props) {
     if (!photo) return;
     setPhotoUri(photo.uri);
     setShowCamera(false);
-    setAnalyzing(true);
-    try {
-      // モデルが未初期化の場合（起動時の初期化に失敗していた場合など）ここで再試行
-      await GemmaModule.initializeModel(GEMMA_MODEL_PATH);
-
-      const prompt = "この画像に映っている建物の被害状況を分析してください。回答は以下の形式で始めてください：\n【被害レベル】Lv1, Lv2, Lv3のいずれか\n【状況説明】簡潔な説明";
-      const result = await GemmaModule.generateResponseWithImage(prompt, photo.uri);
-      console.log("[Gemma] Analysis Result:", result);
-
-      // 被害レベルの抽出 (Lv1, Lv2, Lv3)
-      if (result.includes("Lv3")) {
-        setDamageLevel("Lv3");
-      } else if (result.includes("Lv2")) {
-        setDamageLevel("Lv2");
-      } else if (result.includes("Lv1")) {
-        setDamageLevel("Lv1");
-      } else {
-        setDamageLevel("manual");
-      }
-
-      // 状況説明の抽出とセット
-      const descMatch = result.match(/【状況説明】(.*)/s);
-      if (descMatch && descMatch[1]) {
-        setContent(descMatch[1].trim());
-      } else if (result.length > 5) {
-        // 形式が違っても、ある程度長さがあればそのままセット
-        setContent(result.replace(/【被害レベル】Lv[1-3]/, "").trim());
-      }
-    } catch (e) {
-      console.error("[Gemma] Analysis failed:", e);
-      setDamageLevel("manual");
-    } finally {
-      setAnalyzing(false);
-    }
+    startAnalysis(photo.uri);
   };
 
+  const startAnalysis = (uri: string) => {
+    if (analyzing) return;
+    setAnalyzing(true);
+    gemmaPromiseRef.current = (async () => {
+      try {
+        await GemmaModule.initializeModel(GEMMA_MODEL_PATH);
+        const prompt = "この画像に映っている建物の被害状況を分析してください。回答は以下の形式で始めてください：\n【被害レベル】Lv1, Lv2, Lv3のいずれか\n【状況説明】簡潔な説明";
+        const result = await GemmaModule.generateResponseWithImage(prompt, uri);
+        console.log("[Gemma] Analysis Result:", result);
+        let level: DamageLevel = "manual";
+        if (result.includes("Lv3")) level = "Lv3";
+        else if (result.includes("Lv2")) level = "Lv2";
+        else if (result.includes("Lv1")) level = "Lv1";
+        const descMatch = result.match(/【状況説明】(.*)/s);
+        const desc = descMatch?.[1]?.trim()
+          ?? (result.length > 5 ? result.replace(/【被害レベル】Lv[1-3]/, "").trim() : "");
+        setDamageLevel(level);
+        setContent(desc);
+        return { level, desc };
+      } catch (e) {
+        console.error("[Gemma] Analysis failed:", e);
+        setDamageLevel("manual");
+        return { level: "manual" as DamageLevel, desc: "" };
+      } finally {
+        setAnalyzing(false);
+      }
+    })();
+  };
 
   const resetPhoto = () => {
+    gemmaPromiseRef.current = null;
+    setAnalyzing(false);
     setPhotoUri(null);
     setDamageLevel(null);
     setShowCamera(true);
@@ -169,39 +174,54 @@ export function CreatePostModal({ visible, onClose }: Props) {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      const postPayload = {
+      const basePayload = {
         disasterType: selectedType!,
         damageLevel,
         lat: gpsCoords?.lat ?? null,
         lon: gpsCoords?.lon ?? null,
-        text: content.trim(),
+        text: content.trim() || (photoUri ? "[写真で報告]" : ""),
         timestamp: Math.floor(Date.now() / 1000),
       };
 
-      // マップ（TrustMapEngine）へ先に反映 → クラスタスコアとフィード信頼度を一致させる
-      submitReport({
-        disasterType: postPayload.disasterType,
-        damageLevel:  postPayload.damageLevel,
-        lat:          postPayload.lat,
-        lon:          postPayload.lon,
-        text:         postPayload.text,
-        timestamp:    postPayload.timestamp,
-      });
+      const hadPhoto = !!photoUri;
+      const promise = gemmaPromiseRef.current;
+      gemmaPromiseRef.current = null;
 
-      const { trustLevel, trustScore } = computeFeedTrustForPostPayload(postPayload);
-      const localItem = payloadToNotificationItem(postPayload, {
-        author: "あなた",
-        trustLevel,
-        trustScore,
-      });
-      addItem(localItem);
+      // 送信ロジック（Gemma 完了後でも即時でも呼び出せるよう切り出し）
+      const doSend = (payload: typeof basePayload) => {
+        // マップ（TrustMapEngine）へ先に反映 → クラスタスコアとフィード信頼度を一致させる
+        submitReport({ ...payload });
+        const { trustLevel, trustScore } = computeFeedTrustForPostPayload(payload);
+        const localItem = payloadToNotificationItem(payload, {
+          author: "あなた",
+          trustLevel,
+          trustScore,
+        });
+        addItem(localItem);
+        // BLE送信（オフライン対応・プライマリパス）
+        if (bleState === "connected") {
+          sendText(encodePayload(payload)).catch((e) =>
+            console.error("[Post] BLE send failed:", e)
+          );
+        }
+        // TODO: Firebase保存（セカンダリパス）
+      };
 
-      // BLE送信（オフライン対応・プライマリパス）
-      if (bleState === "connected") {
-        await sendText(encodePayload(postPayload));
+      if (promise) {
+        // Gemma がまだ実行中 → 完了後に送信を予約
+        promise
+          .then(({ level, desc }) => {
+            doSend({ ...basePayload, damageLevel: level, text: desc || basePayload.text });
+            showGemmaResult({ damageLevel: level, content: desc || basePayload.text });
+          })
+          .catch(() => doSend(basePayload));
+      } else {
+        // Gemma はすでに完了（または写真なし）→ 今すぐ送信
+        doSend(basePayload);
+        if (hadPhoto) {
+          showGemmaResult({ damageLevel: basePayload.damageLevel, content: basePayload.text });
+        }
       }
-
-      // TODO: Firebase保存（セカンダリパス）
     } catch (e) {
       console.error("[Post] submit error", e);
     } finally {
@@ -320,26 +340,7 @@ export function CreatePostModal({ visible, onClose }: Props) {
               <View style={styles.damageInfo}>
                 {analyzing ? (
                   <ActivityIndicator size="small" color={Design.colors.primary} />
-                ) : damageLevel === "manual" ? (
-                  // AI判定不可 → 手動選択
-                  <>
-                    <Text style={styles.manualLabel}>損傷レベルを選択</Text>
-                    <View style={styles.manualBtns}>
-                      {(["Lv1", "Lv2", "Lv3"] as const).map((lv) => (
-                        <TouchableOpacity
-                          key={lv}
-                          style={[styles.manualBtn, { borderColor: LEVEL_CONFIG[lv].color }]}
-                          onPress={() => setDamageLevel(lv)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.manualBtnText, { color: LEVEL_CONFIG[lv].color }]}>
-                            {lv}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </>
-                ) : damageLevel ? (
+                ) : damageLevel && damageLevel !== "manual" ? (
                   <View style={[styles.damageBadge, {
                     backgroundColor: LEVEL_CONFIG[damageLevel].bg,
                     borderColor: LEVEL_CONFIG[damageLevel].color,
@@ -347,9 +348,6 @@ export function CreatePostModal({ visible, onClose }: Props) {
                     <Text style={[styles.damageBadgeText, { color: LEVEL_CONFIG[damageLevel].color }]}>
                       {damageLevel}　{LEVEL_CONFIG[damageLevel].label}
                     </Text>
-                    <TouchableOpacity onPress={() => setDamageLevel("manual")}>
-                      <Text style={styles.changeText}>変更</Text>
-                    </TouchableOpacity>
                   </View>
                 ) : null}
                 <TouchableOpacity onPress={resetPhoto}>
@@ -360,7 +358,7 @@ export function CreatePostModal({ visible, onClose }: Props) {
           )}
 
           {/* 内容 */}
-          <Text style={styles.fieldLabel}>内容 <Text style={styles.required}>*</Text></Text>
+          <Text style={styles.fieldLabel}>内容</Text>
           <TextInput
             style={[styles.input, styles.textarea]}
             value={content}
