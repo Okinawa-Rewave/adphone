@@ -1,8 +1,9 @@
 import { AppBar } from '@/components/AppBar';
-import { BottomTab, BOTTOM_TAB_HEIGHT } from '@/components/BottomTab';
+import { BOTTOM_TAB_HEIGHT, BottomTab } from '@/components/BottomTab';
 import { MobileFrame } from '@/components/MobileFrame';
 import { Design } from '@/constants/Design';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -14,69 +15,161 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import * as turf from '@turf/helpers';
 import nearestPointOnLineFn from '@turf/nearest-point-on-line';
-import PathFinder from 'geojson-path-finder';
 import { WebView } from 'react-native-webview';
 
-import * as Location from 'expo-location';
 
 import { useOnline } from '@/hooks/useOnline';
 import shelterData from '../../assets/shelters.json';
 import { appendMapSaveHistory, type MapSaveHistoryItem } from '../../lib/mapSaveHistory';
 
 // ── TrustMap（アプリ全体シングルトン）──────────────
-import type { RawPacket, ScoredEvent } from '../../trustmap-scoring/src/index';
-import { trustMapEngine } from '../../lib/trustmap';
 import { useDisasterReport } from '../../contexts/DisasterReportContext';
+import { trustMapEngine } from '../../lib/trustmap';
+import type { RawPacket, ScoredEvent } from '../../trustmap-scoring/src/index';
 
 // ── ダミーパケット（動作確認用・本番では削除）────
+// 現在地: 渋谷ヒカリエ (35.6591, 139.7038)
+// 全イベントをヒカリエ北西 200〜400m 圏内（神南小学校・大和田への経路上）に集中配置
 const NOW = Date.now() / 1000;
 const DUMMY_PACKETS: RawPacket[] = [
+  // 浸水クラスター（公園通り〜センター街付近）
+  // 3枚公式 → score≈15 → ★★ → 回避半径200m
   {
     id: 'a1', category: 'flood', severity: 4,
-    lat: 35.6580, lng: 139.7000,
-    timestamp: NOW - 300, issuerType: 0,
-    pubkey: 'pk', signature: 'sig', note: '道路が浸水',
+    lat: 35.6614, lng: 139.7002,
+    timestamp: NOW - 60, issuerType: 1,
+    pubkey: 'pk', signature: 'sig', note: '公園通りが膝上まで浸水',
   },
   {
-    id: 'a2', category: 'flood', severity: 3,
-    lat: 35.6583, lng: 139.7005,
-    timestamp: NOW - 600, issuerType: 0,
+    id: 'a2', category: 'flood', severity: 4,
+    lat: 35.6618, lng: 139.6998,
+    timestamp: NOW - 90, issuerType: 1,
+    pubkey: 'pk', signature: 'sig', note: '消防署確認済み 車両通行不可',
+  },
+  {
+    id: 'a3', category: 'flood', severity: 5,
+    lat: 35.6610, lng: 139.7006,
+    timestamp: NOW - 120, issuerType: 1,
+    pubkey: 'pk', signature: 'sig', note: '排水溝が逆流 急速に水位上昇中',
+  },
+  {
+    id: 'a4', category: 'flood', severity: 3,
+    lat: 35.6616, lng: 139.7004,
+    timestamp: NOW - 200, issuerType: 0,
+    pubkey: 'pk', signature: 'sig', note: '地下への浸水も確認',
+  },
+  {
+    id: 'a5', category: 'flood', severity: 3,
+    lat: 35.6612, lng: 139.7000,
+    timestamp: NOW - 300, issuerType: 0,
     pubkey: 'pk', signature: 'sig',
   },
+  // 火災クラスター（宇田川町付近）
+  // 2枚公式 → score≈10 → ★★ → 回避半径200m
   {
-    id: 'a3', category: 'flood', severity: 4,
-    lat: 35.6577, lng: 139.6995,
-    timestamp: NOW - 120, issuerType: 1,
-    pubkey: 'pk', signature: 'sig', note: '消防署確認済み',
+    id: 'b1', category: 'fire', severity: 5,
+    lat: 35.6628, lng: 139.6986,
+    timestamp: NOW - 80, issuerType: 1,
+    pubkey: 'pk', signature: 'sig', note: '宇田川町で建物火災 消防車8台出動',
   },
   {
-    id: 'b1', category: 'fire', severity: 4,
-    lat: 35.6620, lng: 139.7050,
-    timestamp: NOW - 90, issuerType: 0,
-    pubkey: 'pk', signature: 'sig', note: '住宅街で火災発生',
+    id: 'b2', category: 'fire', severity: 4,
+    lat: 35.6625, lng: 139.6990,
+    timestamp: NOW - 150, issuerType: 1,
+    pubkey: 'pk', signature: 'sig', note: '延焼中 周辺に近づかないこと',
+  },
+  // 建物倒壊（道玄坂上付近）
+  {
+    id: 'e1', category: 'building_collapse', severity: 5,
+    lat: 35.6583, lng: 139.6995,
+    timestamp: NOW - 180, issuerType: 1,
+    pubkey: 'pk', signature: 'sig', note: '道玄坂上 古いビルが倒壊 要救助者あり',
   },
   {
-    id: 'c1', category: 'road_block', severity: 2,
-    lat: 35.6540, lng: 139.6980,
-    timestamp: NOW - 1200, issuerType: 0,
-    pubkey: 'pk', signature: 'sig', note: '土砂で通行止め',
-  },
-  {
-    id: 'd1', category: 'injured', severity: 3,
-    lat: 35.6600, lng: 139.7020,
-    timestamp: NOW - 200, issuerType: 0,
-    pubkey: 'pk', signature: 'sig', note: '足をけがした人がいる',
-  },
-  {
-    id: 'd2', category: 'injured', severity: 4,
-    lat: 35.6602, lng: 139.7022,
+    id: 'e2', category: 'building_collapse', severity: 4,
+    lat: 35.6580, lng: 139.6998,
     timestamp: NOW - 300, issuerType: 0,
-    pubkey: 'pk', signature: 'sig', note: '動けない状態',
+    pubkey: 'pk', signature: 'sig', note: '瓦礫が道路に散乱',
   },
+  // ガス漏れ（渋谷3丁目付近）
+  {
+    id: 'f1', category: 'gas_leak', severity: 3,
+    lat: 35.6599, lng: 139.7048,
+    timestamp: NOW - 350, issuerType: 0,
+    pubkey: 'pk', signature: 'sig', note: 'ガス臭が強い',
+  },
+  // 道路閉塞（宮益坂）
+  {
+    id: 'c1', category: 'road_block', severity: 3,
+    lat: 35.6601, lng: 139.7030,
+    timestamp: NOW - 400, issuerType: 1,
+    pubkey: 'pk', signature: 'sig', note: '宮益坂 落下物で通行止め',
+  },
+  {
+    id: 'c2', category: 'road_block', severity: 2,
+    lat: 35.6604, lng: 139.7026,
+    timestamp: NOW - 500, issuerType: 0,
+    pubkey: 'pk', signature: 'sig', note: '信号機が倒れ道路をふさいでいる',
+  },
+  {
+    id: 'c3', category: 'road_block', severity: 2,
+    lat: 35.6596, lng: 139.7022,
+    timestamp: NOW - 700, issuerType: 0,
+    pubkey: 'pk', signature: 'sig', note: '通行止め',
+  },
+  // けが人（クラスター内）
+  {
+    id: 'd1', category: 'injured', severity: 4,
+    lat: 36.6600, lng: 139.7348,
+    timestamp: NOW - 140, issuerType: 0,
+    pubkey: 'pk', signature: 'sig', note: '倒壊建物の下敷き 119通報済み',
+  },
+  // 火災延焼（宇田川クラスター北側に隣接・約96m → 同クラスターに合流）
+  {
+    id: 'g1', category: 'fire', severity: 4,
+    lat: 35.6636, lng: 139.6982,
+    timestamp: NOW - 320, issuerType: 0,
+    pubkey: 'pk', signature: 'sig', note: '神南方向に延焼 煙が視認できる',
+  },
+  // 建物倒壊拡大（道玄坂クラスターに隣接・約82m → 同クラスターに合流）
+  {
+    id: 'h1', category: 'building_collapse', severity: 4,
+    lat: 35.6576, lng: 139.6992,
+    timestamp: NOW - 450, issuerType: 0,
+    pubkey: 'pk', signature: 'sig', note: '道玄坂下 隣接ビルにも倒壊被害',
+  },
+  // 土砂崩れ（神泉・松濤の斜面 — 単独）
+  {
+    id: 'i1', category: 'landslide', severity: 3,
+    lat: 35.6545, lng: 139.6927,
+    timestamp: NOW - 600, issuerType: 1,
+    pubkey: 'pk', signature: 'sig', note: '神泉駅付近 松濤の急斜面が崩落',
+  },
+  // 恵比寿で別火災（南東エリア — 単独）
+  {
+    id: 'j1', category: 'fire', severity: 3,
+    lat: 35.6463, lng: 139.7102,
+    timestamp: NOW - 480, issuerType: 0,
+    pubkey: 'pk', signature: 'sig', note: '恵比寿1丁目 飲食店から出火',
+  },
+  // 千駄ヶ谷浸水（北東エリア — 単独）
+  {
+    id: 'k1', category: 'flood', severity: 3,
+    lat: 35.6759, lng: 139.7106,
+    timestamp: NOW - 700, issuerType: 1,
+    pubkey: 'pk', signature: 'sig', note: '千駄ヶ谷駅周辺 地下道に浸水',
+  },
+  // 神泉駅前 道路閉塞（西エリア — 単独）
+  {
+    id: 'l1', category: 'road_block', severity: 3,
+    lat: 35.6601, lng: 139.6920,
+    timestamp: NOW - 560, issuerType: 0,
+    pubkey: 'pk', signature: 'sig', note: '神泉駅前 崩落した壁が道路をふさぐ',
+  },
+
 ];
 
 const SELF_ID = 'userA';
@@ -89,10 +182,9 @@ type Destination = { lat: number; lng: number; name: string; isShelter: boolean 
 type FilterKey = 'disasters' | 'shelters' | 'injured';
 type FilterState = Record<FilterKey, boolean>;
 
-// ── 災害回避の半径（★ごと）──────────────────────
-const DISASTER_RADIUS_M: Record<1 | 2 | 3, number> = {
-  3: 100, 2: 60, 1: 30,
-}
+type DangerEvent = ScoredEvent & { enclosingRadiusM: number };
+
+const ROUTE_AVOID_MARGIN = 60;
 
 function distanceM(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000
@@ -106,23 +198,46 @@ function distanceM(lat1: number, lng1: number, lat2: number, lng2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-function filterSafeNodes(nodes: number[][], events: ScoredEvent[]): number[][] {
-  const dangerEvents = events.filter(e => e.category !== 'injured')
-  if (dangerEvents.length === 0) return nodes
-  return nodes.filter(([lng, lat]) =>
-    dangerEvents.every((e) => distanceM(lat, lng, e.lat, e.lng) > DISASTER_RADIUS_M[e.stars])
-  )
+// 点→線分の最短距離 (m)。局所平面近似（cosLat補正）を使用。
+function minDistFromPointToSegmentM(
+  clat: number, clng: number,
+  lat1: number, lng1: number,
+  lat2: number, lng2: number
+): number {
+  const R = 6371000;
+  const cosLat = Math.cos(((lat1 + lat2) / 2) * Math.PI / 180);
+  const cx = (clng - lng1) * cosLat * R * Math.PI / 180;
+  const cy = (clat - lat1) * R * Math.PI / 180;
+  const ex = (lng2 - lng1) * cosLat * R * Math.PI / 180;
+  const ey = (lat2 - lat1) * R * Math.PI / 180;
+  const len2 = ex * ex + ey * ey;
+  if (len2 === 0) return Math.sqrt(cx * cx + cy * cy);
+  const t = Math.max(0, Math.min(1, (cx * ex + cy * ey) / len2));
+  const dx = cx - t * ex;
+  const dy = cy - t * ey;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
-function filterSafeRoads(features: any[], events: ScoredEvent[]): any[] {
-  const dangerEvents = events.filter(e => e.category !== 'injured')
-  if (dangerEvents.length === 0) return features
-  return features.filter((f: any) => {
-    const coords = f.geometry.coordinates as number[][]
-    return coords.every(([lng, lat]) =>
-      dangerEvents.every((e) => distanceM(lat, lng, e.lat, e.lng) > DISASTER_RADIUS_M[e.stars])
-    )
-  })
+// スナップ後の始点・終点が危険圏内に入るエッジケースも含め、確定経路の貫通を検出する
+function pathPenetratesDanger(
+  path: [number, number][],  // [lng, lat][]
+  dangers: DangerEvent[],
+  margin: number,
+): { penetrated: boolean; hitDangers: DangerEvent[] } {
+  const hits = new Set<DangerEvent>();
+  for (let i = 0; i < path.length - 1; i++) {
+    const [lng1, lat1] = path[i];
+    const [lng2, lat2] = path[i + 1];
+    for (const d of dangers) {
+      if (hits.has(d)) continue;
+      if (minDistFromPointToSegmentM(
+        d.lat, d.lng, lat1, lng1, lat2, lng2,
+      ) <= d.enclosingRadiusM + margin) {
+        hits.add(d);
+      }
+    }
+  }
+  return { penetrated: hits.size > 0, hitDangers: Array.from(hits) };
 }
 
 function nearestPointOnRoads(point: any, lineFeatures: any[]) {
@@ -169,6 +284,169 @@ function calcEnclosingRadiusM(
   return Math.max(MIN_RADIUS, Math.min(maxDist, MAX_RADIUS));
 }
 
+// ── A* Pathfinding ──────────────────────────────────
+interface AStarEdge { toKey: string; toLng: number; toLat: number; dist: number }
+type AStarGraph = Map<string, AStarEdge[]>
+
+class MinHeap {
+  private d: [number, string][] = []
+  push(f: number, k: string) {
+    this.d.push([f, k])
+    let i = this.d.length - 1
+    while (i > 0) {
+      const p = (i - 1) >> 1
+      if (this.d[p][0] <= this.d[i][0]) break
+      ;[this.d[p], this.d[i]] = [this.d[i], this.d[p]]
+      i = p
+    }
+  }
+  pop(): [number, string] | undefined {
+    if (!this.d.length) return undefined
+    const top = this.d[0]
+    const last = this.d.pop()!
+    if (this.d.length) {
+      this.d[0] = last
+      let i = 0
+      const n = this.d.length
+      for (;;) {
+        const l = 2 * i + 1, r = 2 * i + 2
+        let s = i
+        if (l < n && this.d[l][0] < this.d[s][0]) s = l
+        if (r < n && this.d[r][0] < this.d[s][0]) s = r
+        if (s === i) break
+        ;[this.d[s], this.d[i]] = [this.d[i], this.d[s]]
+        i = s
+      }
+    }
+    return top
+  }
+  get size() { return this.d.length }
+}
+
+function nk(lng: number, lat: number): string {
+  return `${lng.toFixed(6)},${lat.toFixed(6)}`
+}
+
+function buildGraph(
+  features: any[],
+  dangers?: DangerEvent[],
+  margin?: number,
+): { graph: AStarGraph; removedAny: boolean } {
+  const g: AStarGraph = new Map()
+  let removedAny = false
+  for (const f of features) {
+    if (f.geometry?.type !== 'LineString') continue
+    const c: number[][] = f.geometry.coordinates
+    for (let i = 0; i < c.length - 1; i++) {
+      const [lng1, lat1] = c[i], [lng2, lat2] = c[i + 1]
+      if (dangers && margin != null) {
+        let blocked = false
+        for (const d of dangers) {
+          if (minDistFromPointToSegmentM(
+            d.lat, d.lng, lat1, lng1, lat2, lng2,
+          ) <= d.enclosingRadiusM + margin) {
+            blocked = true; removedAny = true; break
+          }
+        }
+        if (blocked) continue
+      }
+      const k1 = nk(lng1, lat1), k2 = nk(lng2, lat2)
+      const dist = distanceM(lat1, lng1, lat2, lng2)
+      if (!g.has(k1)) g.set(k1, [])
+      if (!g.has(k2)) g.set(k2, [])
+      g.get(k1)!.push({ toKey: k2, toLng: lng2, toLat: lat2, dist })
+      g.get(k2)!.push({ toKey: k1, toLng: lng1, toLat: lat1, dist })
+    }
+  }
+  return { graph: g, removedAny }
+}
+
+// 危険エッジのコストを50倍にし、グラフを非連結にせず安全経路を優先する
+const DANGER_PENALTY = 50
+
+function buildPenalizedGraph(
+  features: any[],
+  dangers: DangerEvent[],
+  margin: number,
+): AStarGraph {
+  const g: AStarGraph = new Map()
+  for (const f of features) {
+    if (f.geometry?.type !== 'LineString') continue
+    const c: number[][] = f.geometry.coordinates
+    for (let i = 0; i < c.length - 1; i++) {
+      const [lng1, lat1] = c[i], [lng2, lat2] = c[i + 1]
+      let dist = distanceM(lat1, lng1, lat2, lng2)
+      for (const d of dangers) {
+        if (minDistFromPointToSegmentM(
+          d.lat, d.lng, lat1, lng1, lat2, lng2,
+        ) <= d.enclosingRadiusM + margin) {
+          dist *= DANGER_PENALTY
+          break
+        }
+      }
+      const k1 = nk(lng1, lat1), k2 = nk(lng2, lat2)
+      if (!g.has(k1)) g.set(k1, [])
+      if (!g.has(k2)) g.set(k2, [])
+      g.get(k1)!.push({ toKey: k2, toLng: lng2, toLat: lat2, dist })
+      g.get(k2)!.push({ toKey: k1, toLng: lng1, toLat: lat1, dist })
+    }
+  }
+  return g
+}
+
+function runAStar(
+  graph: AStarGraph,
+  startLng: number, startLat: number,
+  endLng: number, endLat: number,
+): [number, number][] | null {
+  const sk = nk(startLng, startLat)
+  const ek = nk(endLng, endLat)
+  if (!graph.has(sk) || !graph.has(ek)) return null
+
+  const heap = new MinHeap()
+  const gScore = new Map<string, number>()
+  const came = new Map<string, string | null>()
+  const pos = new Map<string, [number, number]>()
+  const visited = new Set<string>()
+
+  pos.set(sk, [startLng, startLat])
+  pos.set(ek, [endLng, endLat])
+  gScore.set(sk, 0)
+  came.set(sk, null)
+  heap.push(distanceM(startLat, startLng, endLat, endLng), sk)
+
+  while (heap.size > 0) {
+    const item = heap.pop()!
+    const cur = item[1]
+    if (visited.has(cur)) continue
+    visited.add(cur)
+
+    if (cur === ek) {
+      const path: [number, number][] = []
+      let k: string | null | undefined = cur
+      while (k != null) {
+        const p = pos.get(k)!
+        path.unshift([p[0], p[1]])
+        k = came.get(k) ?? undefined
+      }
+      return path
+    }
+
+    const cg = gScore.get(cur) ?? Infinity
+    for (const e of (graph.get(cur) ?? [])) {
+      if (visited.has(e.toKey)) continue
+      if (!pos.has(e.toKey)) pos.set(e.toKey, [e.toLng, e.toLat])
+      const tg = cg + e.dist
+      if (tg < (gScore.get(e.toKey) ?? Infinity)) {
+        gScore.set(e.toKey, tg)
+        came.set(e.toKey, cur)
+        heap.push(tg + distanceM(e.toLat, e.toLng, endLat, endLng), e.toKey)
+      }
+    }
+  }
+  return null
+}
+
 const PENDING_DL_KEY = '@map_pending_dl';
 
 export default function App() {
@@ -182,23 +460,27 @@ export default function App() {
   const [webReady, setWebReady] = useState(false);
   const [distance, setDistance] = useState<number | null>(null);
   const [isRouting, setIsRouting] = useState(false);
+  const [isAvoidingDisaster, setIsAvoidingDisaster] = useState(false);
+  const [penetratedSummary, setPenetratedSummary] = useState<string | null>(null);
 
-  const walkFinderRef = useRef<any>(null);
-  const carFinderRef  = useRef<any>(null);
+  const walkLoadedRef = useRef(false);
+  const carLoadedRef  = useRef(false);
+  // クリップ済みルートグラフのキャッシュ（bbox × mode）
+  const routeGraphCacheRef = useRef<{ key: string; graph: AStarGraph; nodes: number[][] } | null>(null);
   const walkNodesRef  = useRef<number[][]>([]);
   const carNodesRef   = useRef<number[][]>([]);
   const walkExplodedRef = useRef<any[]>([]);
   const carExplodedRef  = useRef<any[]>([]);
-  const safeFinderRef = useRef<any>(null);
-  const safeFinderKeyRef = useRef<string>('');
   const initialCenteredRef = useRef(false);
   const routingInitPromiseRef = useRef<Promise<boolean> | null>(null);
   const roadFeaturesRef = useRef<any[]>([]);
   const sentDisasterHashesRef = useRef<Record<string, string>>({});
   const latestUserPosRef = useRef<UserPos | null>(null);
   const disasterEventsRef = useRef<ScoredEvent[]>([]);
+  const disasterEventsEnrichedRef = useRef<DangerEvent[]>([]);
   const isRoutingRef = useRef(false);
   const lastRouteKeyRef = useRef<string>('');
+  const lastDisasterHashRef = useRef<string>('');
   const lastAlertKeyRef = useRef<string>('');
   const lastAlertAtRef = useRef<number>(0);
   const lastShelterTapAtRef = useRef<number>(0);
@@ -269,53 +551,14 @@ export default function App() {
     return turf.point(nearest);
   }
 
-  // ── GPS: 初回は即時取得、その後は移動に追従（タイル自動取得・経路と整合）──
+  // ── 現在地: 渋谷ヒカリエホール（固定）──
   useEffect(() => {
-    let sub: Location.LocationSubscription | null = null;
-    (async () => {
-      try {
-        setLocLoading(true);
-        setLocError(null);
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setLocError('位置情報の権限がありません（設定から許可してください）');
-          setLocLoading(false);
-          return;
-        }
-        const first = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        setUserPos({
-          id: SELF_ID,
-          lat: first.coords.latitude,
-          lng: first.coords.longitude,
-        });
-        setLocLoading(false);
-
-        sub = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.Balanced, distanceInterval: 50 },
-          (loc) => {
-            setUserPos({
-              id: SELF_ID,
-              lat: loc.coords.latitude,
-              lng: loc.coords.longitude,
-            });
-          }
-        );
-      } catch (e: any) {
-        setLocError(String(e?.message ?? e));
-        setLocLoading(false);
-      }
-    })();
-    return () => {
-      sub?.remove();
-    };
+    setUserPos({ id: SELF_ID, lat: 35.6591, lng: 139.7038 });
+    setLocLoading(false);
   }, []);
 
   const ensureRoutingReady = useCallback(async (targetMode: Mode): Promise<boolean> => {
-    const readyForMode = targetMode === 'walk'
-      ? !!walkFinderRef.current
-      : !!carFinderRef.current;
+    const readyForMode = targetMode === 'walk' ? walkLoadedRef.current : carLoadedRef.current;
     if (readyForMode) return true;
     if (routingInitPromiseRef.current) return routingInitPromiseRef.current;
     routingInitPromiseRef.current = (async () => {
@@ -327,7 +570,7 @@ export default function App() {
         }
 
         const allFeatures = roadFeaturesRef.current;
-        if (targetMode === 'walk' && !walkFinderRef.current) {
+        if (targetMode === 'walk' && !walkLoadedRef.current) {
           const WALK_EXCLUDE = new Set([
             'motorway', 'motorway_link', 'service', 'track',
             'cycleway', 'bridleway', 'raceway', 'bus_guideway',
@@ -336,24 +579,22 @@ export default function App() {
           const walkRaw = allFeatures.filter(
             (f: any) => f.properties?.highway && !WALK_EXCLUDE.has(f.properties.highway)
           );
-          const walkExp = explodeMultiLineStrings(walkRaw);
-          walkExplodedRef.current = walkExp;
-          walkFinderRef.current = new PathFinder(turf.featureCollection(walkExp));
-          walkNodesRef.current = extractNodes(walkExp);
+          walkExplodedRef.current = explodeMultiLineStrings(walkRaw);
+          walkNodesRef.current = extractNodes(walkExplodedRef.current);
+          walkLoadedRef.current = true;
         }
-        if (targetMode === 'car' && !carFinderRef.current) {
+        if (targetMode === 'car' && !carLoadedRef.current) {
           const carRaw = allFeatures.filter(
             (f: any) => f.properties?.highway &&
               !['footway', 'steps', 'pedestrian'].includes(f.properties.highway)
           );
-          const carExp  = explodeMultiLineStrings(carRaw);
-          carExplodedRef.current = carExp;
-          carFinderRef.current = new PathFinder(turf.featureCollection(carExp));
-          carNodesRef.current = extractNodes(carExp);
+          carExplodedRef.current = explodeMultiLineStrings(carRaw);
+          carNodesRef.current = extractNodes(carExplodedRef.current);
+          carLoadedRef.current = true;
         }
         setTimeout(() => {
-          if (targetMode === 'walk' && !carFinderRef.current) ensureRoutingReady('car');
-          if (targetMode === 'car' && !walkFinderRef.current) ensureRoutingReady('walk');
+          if (targetMode === 'walk' && !carLoadedRef.current) ensureRoutingReady('car');
+          if (targetMode === 'car' && !walkLoadedRef.current) ensureRoutingReady('walk');
         }, 100);
         return true;
       } catch {
@@ -374,6 +615,13 @@ export default function App() {
   // ── disasterEventsRef を経路探索用に同期 ──
   useEffect(() => {
     disasterEventsRef.current = disasterEvents;
+    disasterEventsEnrichedRef.current = disasterEvents.map(e => ({
+      ...e,
+      enclosingRadiusM: calcEnclosingRadiusM(
+        e.packets.map(p => ({ lat: p.lat, lng: p.lng })),
+        e.lat, e.lng
+      ),
+    }));
   }, [disasterEvents]);
 
   useEffect(() => {
@@ -456,27 +704,47 @@ export default function App() {
     );
   };
 
-  // ── 経路探索（災害エリア回避付き）────────────────
+  // ── A* 経路探索（クリップ済みグラフ + 災害エリア回避）──────────────
+  // disasterEventsをクロージャに含めず disasterEventsEnrichedRef.current で読むことで
+  // disasterEvents変化時のコールバック再生成→useEffect連鎖を防ぐ
   const findRoute = useCallback((start: UserPos, end: Destination) => {
     const isWalk = mode === 'walk';
-    const finder = isWalk ? walkFinderRef.current : carFinderRef.current;
-    const nodes  = isWalk ? walkNodesRef.current  : carNodesRef.current;
-    if (!finder || nodes.length === 0) {
-      console.warn(`[Route] Skipped: finder=${!!finder}, nodes=${nodes?.length ?? 0}, mode=${mode}`);
+    const allExploded = isWalk ? walkExplodedRef.current : carExplodedRef.current;
+    const allNodes    = isWalk ? walkNodesRef.current    : carNodesRef.current;
+    if (!allExploded.length || !allNodes.length) {
+      console.warn(`[A*] Skipped: roads not loaded, mode=${mode}`);
       return;
     }
 
+    // 現在の災害データをrefから直接取得（staleにならない）
+    const dangers = disasterEventsEnrichedRef.current.filter(e => e.category !== 'injured');
+    const routePad = 0.02;
+    const bMinLat = Math.min(start.lat, end.lat) - routePad;
+    const bMaxLat = Math.max(start.lat, end.lat) + routePad;
+    const bMinLng = Math.min(start.lng, end.lng) - routePad;
+    const bMaxLng = Math.max(start.lng, end.lng) + routePad;
+    const nearbyDangers = dangers.filter(e => {
+      const padLat = e.enclosingRadiusM / 111000;
+      const padLng = e.enclosingRadiusM / (111000 * Math.cos(e.lat * Math.PI / 180));
+      return e.lat >= bMinLat - padLat && e.lat <= bMaxLat + padLat &&
+             e.lng >= bMinLng - padLng && e.lng <= bMaxLng + padLng;
+    });
+
+    // routeKey: 位置・モード・災害状態が同じなら再計算しない
     const routeKey = [
       start.lat.toFixed(5), start.lng.toFixed(5),
       end.lat.toFixed(5), end.lng.toFixed(5),
       mode,
-    ].join('|');
+      nearbyDangers.map(d =>
+        `${d.lat.toFixed(5)},${d.lng.toFixed(5)},${d.enclosingRadiusM.toFixed(0)}`
+      ).sort().join('|'),
+    ].join('||');
     if (routeKey === lastRouteKeyRef.current) {
-      console.log('[Route] Skipped: same routeKey');
+      console.log('[A*] Skipped: same routeKey');
       return;
     }
     if (isRoutingRef.current) {
-      console.log('[Route] Skipped: already routing');
+      console.log('[A*] Skipped: already routing');
       return;
     }
 
@@ -484,87 +752,141 @@ export default function App() {
     isRoutingRef.current = true;
     setIsRouting(true);
     const t0 = Date.now();
+
     setTimeout(() => {
       try {
-        const currentEvents = disasterEventsRef.current;
-        const exploded = isWalk ? walkExplodedRef.current : carExplodedRef.current;
-        const clipped = clipToBbox(exploded, start.lat, start.lng, end.lat, end.lng);
-        const roadsForSnap = clipped.length > 10 ? clipped : exploded;
+        // ── bbox クリップでグラフを小さく保つ（パフォーマンス最重要）──
+        const clipPad = 0.06; // ~6.7km。都市内ルートに十分かつ 0.15 比で約 1/6 のノード数
+        const clipped = clipToBbox(allExploded, start.lat, start.lng, end.lat, end.lng, clipPad);
+        const routeFeatures = clipped.length > 50 ? clipped : allExploded;
+
+        // クリップ済みフルグラフをキャッシュ（同一bboxなら再構築しない）
+        const gKey = `${mode}|${(Math.min(start.lat, end.lat) - clipPad).toFixed(3)},${(Math.max(start.lat, end.lat) + clipPad).toFixed(3)},${(Math.min(start.lng, end.lng) - clipPad).toFixed(3)},${(Math.max(start.lng, end.lng) + clipPad).toFixed(3)}`;
+        let graph: AStarGraph;
+        let routeNodes: number[][];
+        const cached = routeGraphCacheRef.current;
+        if (cached?.key === gKey) {
+          graph = cached.graph;
+          routeNodes = cached.nodes;
+        } else {
+          graph = buildGraph(routeFeatures).graph;
+          routeNodes = extractNodes(routeFeatures);
+          routeGraphCacheRef.current = { key: gKey, graph, nodes: routeNodes };
+          console.log(`[A*] Graph built: ${routeFeatures.length} features → ${graph.size} nodes`);
+        }
+
         const startPoint = turf.point([start.lng, start.lat]);
-        const endPoint   = turf.point([end.lng, end.lat]);
-        const snapStart  = nearestPointOnRoads(startPoint, roadsForSnap);
-        const snapEnd    = nearestPointOnRoads(endPoint, roadsForSnap);
+        const endPoint   = turf.point([end.lng,   end.lat]);
+        const snapStart  = nearestPointOnRoads(startPoint, routeFeatures);
+        const snapEnd    = nearestPointOnRoads(endPoint,   routeFeatures);
+        const snapNodes  = routeNodes.length > 10 ? routeNodes : allNodes;
+        const startNode  = snapToNearestNode(snapStart, snapNodes);
+        const endNode    = snapToNearestNode(snapEnd,   snapNodes);
+        const [startLng, startLat] = startNode.geometry.coordinates as [number, number];
+        const [endLng,   endLat]   = endNode.geometry.coordinates   as [number, number];
 
-        const routePad = 0.02;
-        const bboxMinLat = Math.min(start.lat, end.lat) - routePad;
-        const bboxMaxLat = Math.max(start.lat, end.lat) + routePad;
-        const bboxMinLng = Math.min(start.lng, end.lng) - routePad;
-        const bboxMaxLng = Math.max(start.lng, end.lng) + routePad;
-        const nearbyDangers = currentEvents.filter(e =>
-          e.category !== 'injured' &&
-          e.lat >= bboxMinLat && e.lat <= bboxMaxLat &&
-          e.lng >= bboxMinLng && e.lng <= bboxMaxLng
-        );
-
-        const startNode = snapToNearestNode(snapStart, nodes);
-        const endNode   = snapToNearestNode(snapEnd,   nodes);
-
-        let result: any = null;
-        let usedSafeFinder = false;
-
+        // Pass 1: 危険エッジ除去グラフ
+        let path: [number, number][] | null = null;
+        let isAvoidance = false;
         if (nearbyDangers.length > 0) {
-          try {
-            const widerClip = clipToBbox(exploded, start.lat, start.lng, end.lat, end.lng, 0.15);
-            const safeSource = widerClip.length > 50 ? widerClip : exploded;
-            const safeNodes = filterSafeNodes(nodes, nearbyDangers);
-            const bboxKey = [bboxMinLat.toFixed(3), bboxMaxLat.toFixed(3), bboxMinLng.toFixed(3), bboxMaxLng.toFixed(3)].join(',');
-            const safeKey = mode + '|' + bboxKey + '|' + nearbyDangers.map(e => `${e.lat},${e.lng},${e.stars}`).join('|');
-            if (!safeFinderRef.current || safeFinderKeyRef.current !== safeKey) {
-              const safeRoads = filterSafeRoads(safeSource, nearbyDangers);
-              safeFinderRef.current = safeRoads.length > 10
-                ? new PathFinder(turf.featureCollection(safeRoads))
-                : finder;
-              safeFinderKeyRef.current = safeKey;
+          const { graph: safeGraph, removedAny } = buildGraph(routeFeatures, nearbyDangers, ROUTE_AVOID_MARGIN);
+          if (removedAny) {
+            path = runAStar(safeGraph, startLng, startLat, endLng, endLat);
+            if (path) isAvoidance = true;
+          }
+          // Pass 2: ペナルティグラフ（非連結時も安全迂回を探索）
+          if (!path) {
+            const penGraph = buildPenalizedGraph(routeFeatures, nearbyDangers, ROUTE_AVOID_MARGIN);
+            path = runAStar(penGraph, startLng, startLat, endLng, endLat);
+            if (path) isAvoidance = true;
+          }
+        }
+        // Pass 3: フルグラフ（真の非連結時のみ使用）
+        if (!path) {
+          path = runAStar(graph, startLng, startLat, endLng, endLat);
+        }
+
+        // フォールバック: 徒歩グラフ非連結 → 車道A*（同じく3パス）
+        if (!path && isWalk && carLoadedRef.current && carExplodedRef.current.length) {
+          const carClipped = clipToBbox(carExplodedRef.current, start.lat, start.lng, end.lat, end.lng, clipPad);
+          const carFeatures = carClipped.length > 50 ? carClipped : carExplodedRef.current;
+          if (nearbyDangers.length > 0) {
+            const { graph: safeCarGraph, removedAny } = buildGraph(carFeatures, nearbyDangers, ROUTE_AVOID_MARGIN);
+            if (removedAny) {
+              path = runAStar(safeCarGraph, startLng, startLat, endLng, endLat);
+              if (path) isAvoidance = true;
             }
-            const safeRoutingNodes = safeNodes.length > 10 ? safeNodes : nodes;
-            const safeStart = snapToNearestNode(snapStart, safeRoutingNodes);
-            const safeEnd   = snapToNearestNode(snapEnd,   safeRoutingNodes);
-            result = safeFinderRef.current.findPath(safeStart, safeEnd);
-            usedSafeFinder = true;
-          } catch (safeErr) {
-            console.warn('[Route] Safe finder construction/search failed, falling back', safeErr);
+            if (!path) {
+              const penCarGraph = buildPenalizedGraph(carFeatures, nearbyDangers, ROUTE_AVOID_MARGIN);
+              path = runAStar(penCarGraph, startLng, startLat, endLng, endLat);
+              if (path) isAvoidance = true;
+            }
+            if (!path) {
+              path = runAStar(buildGraph(carFeatures).graph, startLng, startLat, endLng, endLat);
+            }
+          } else {
+            const { graph: carGraph } = buildGraph(carFeatures);
+            const carNodes2 = extractNodes(carFeatures);
+            const snapNodes2 = carNodes2.length > 10 ? carNodes2 : carNodesRef.current;
+            const cs = snapToNearestNode(snapStart, snapNodes2);
+            const ce = snapToNearestNode(snapEnd,   snapNodes2);
+            const [csl, csa] = cs.geometry.coordinates as [number, number];
+            const [cel, cea] = ce.geometry.coordinates as [number, number];
+            path = runAStar(carGraph, csl, csa, cel, cea);
           }
-        }
-
-        if (!result?.path) {
-          result = finder.findPath(startNode, endNode);
-          if (result?.path && usedSafeFinder) {
-            console.log('[Route] Safe finder failed, fell back to full graph (may pass through disaster)');
-          }
-        }
-
-        if (!result?.path && isWalk && carFinderRef.current && carNodesRef.current.length > 0) {
-          const carStart = snapToNearestNode(snapStart, carNodesRef.current);
-          const carEnd   = snapToNearestNode(snapEnd,   carNodesRef.current);
-          result = carFinderRef.current.findPath(carStart, carEnd);
-          if (result?.path) {
-            console.log('[Route] Walk graph disconnected, used car network as fallback');
-          }
+          if (path) console.log('[A*] Walk disconnected, used car network');
         }
 
         const elapsed = Date.now() - t0;
-        if (result?.path) {
-          setDistance(Math.round(result.weight * 1000));
-          const coords = result.path.map((p: number[]) => [p[1], p[0]]);
-          webViewRef.current?.postMessage(JSON.stringify({ type: 'drawRoute', coordinates: coords }));
+        if (path) {
+          // ペナルティを除いた実距離を再集計
+          let trueDist = 0;
+          for (let i = 0; i < path.length - 1; i++) {
+            trueDist += distanceM(path[i][1], path[i][0], path[i + 1][1], path[i + 1][0]);
+          }
+          setDistance(Math.round(trueDist));
+          setIsAvoidingDisaster(isAvoidance);
+
+          // スナップ時に始点・終点が危険圏内に入るエッジケースを事後検出
+          let summaryText: string | null = null;
+          if (nearbyDangers.length > 0) {
+            const verify = pathPenetratesDanger(path, nearbyDangers, ROUTE_AVOID_MARGIN);
+            if (verify.penetrated) {
+              const counts = verify.hitDangers.reduce((acc, d) => {
+                acc[d.category] = (acc[d.category] ?? 0) + 1;
+                return acc;
+              }, {} as Record<string, number>);
+              const labelMap: Record<string, string> = {
+                fire:              '火災',
+                flood:             '浸水',
+                building_collapse: '倒壊',
+                gas_leak:          'ガス漏れ',
+                landslide:         '土砂崩れ',
+                road_block:        '道路閉塞',
+              };
+              summaryText = Object.entries(counts)
+                .map(([cat, n]) => `${labelMap[cat] ?? cat}${n}件`)
+                .join('・');
+              console.warn(`[A*] Path penetrates danger zone: ${summaryText}`);
+            }
+          }
+          setPenetratedSummary(summaryText);
+
+          const coords = path.map(([lng, lat]) => [lat, lng]);
+          webViewRef.current?.postMessage(JSON.stringify({
+            type: 'drawRoute', coordinates: coords, isAvoidance,
+            penetrated: summaryText !== null, penetratedSummary: summaryText ?? '',
+          }));
           webViewRef.current?.postMessage(JSON.stringify({
             type: 'updateDestinationPin',
             lat: end.lat, lng: end.lng,
-            name: end.name, isShelter: end.isShelter
+            name: end.name, isShelter: end.isShelter,
           }));
-          console.log(`[Route] OK in ${elapsed}ms`);
+          console.log(`[A*] OK in ${elapsed}ms, avoidance=${isAvoidance}, penetrated=${summaryText !== null}, nodes=${path.length}`);
         } else {
           setDistance(null);
+          setIsAvoidingDisaster(false);
+          setPenetratedSummary(null);
           const alertKey = 'no-route';
           const now = Date.now();
           if (lastAlertKeyRef.current !== alertKey || now - lastAlertAtRef.current > 8000) {
@@ -572,17 +894,18 @@ export default function App() {
             lastAlertAtRef.current = now;
             Alert.alert('経路が見つかりません', '付近の道路ネットワークで経路が見つかりませんでした。');
           }
-          console.log(`[Route] No path found (${elapsed}ms)`);
+          console.log(`[A*] No path found (${elapsed}ms)`);
         }
       } catch (err) {
-        console.error('Routing Error:', err);
+        console.error('[A*] Routing Error:', err);
       } finally {
         isRoutingRef.current = false;
         setIsRouting(false);
       }
     }, 10);
-  }, [mode]);
+  }, [mode]); // disasterEventsを依存から外す: refで読むため再生成不要
 
+  // 目的地・モード・現在地・WebView準備が変わったとき: キーをリセットして再探索
   useEffect(() => {
     if (!webReady || !destination || !userPos) return;
     lastRouteKeyRef.current = '';
@@ -595,6 +918,23 @@ export default function App() {
       findRoute(userPos, destination);
     })();
   }, [webReady, mode, destination, userPos, findRoute, ensureRoutingReady]);
+
+  // 災害情報が更新されたとき: 実データが変化した場合のみ再探索
+  useEffect(() => {
+    // 位置・半径ベースのハッシュで実変化を判定（配列参照変化だけでは再計算しない）
+    const hash = disasterEvents
+      .filter(e => e.category !== 'injured')
+      .map(e => `${e.lat.toFixed(5)},${e.lng.toFixed(5)}`)
+      .sort().join('|');
+    if (hash === lastDisasterHashRef.current) return;
+    lastDisasterHashRef.current = hash;
+
+    if (!webReady || !destination || !userPos) return;
+    if (!lastRouteKeyRef.current) return; // まだルート未計算なら不要
+    lastRouteKeyRef.current = '';
+    findRoute(userPos, destination);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disasterEvents]);
 
   const onMessage = (event: any) => {
     try {
@@ -645,16 +985,44 @@ export default function App() {
 
   const handleNearestShelter = () => {
     if (!userPos) return;
-    let minD = Infinity;
-    let closest: any = null;
-    (shelterData as any[]).forEach((s) => {
-      const d = Math.pow(s.lat - userPos.lat, 2) + Math.pow(s.lng - userPos.lng, 2);
-      if (d < minD) { minD = d; closest = s; }
-    });
-    if (closest) {
+    const dangers = disasterEventsEnrichedRef.current.filter(e => e.category !== 'injured');
+
+    let bestShelter: any = null;
+    let bestScore = Infinity;
+
+    for (const s of shelterData as any[]) {
+      const insideDanger = dangers.some(
+        dz => distanceM(s.lat, s.lng, dz.lat, dz.lng) <= dz.enclosingRadiusM,
+      );
+      if (insideDanger) continue;
+
+      const d = distanceM(userPos.lat, userPos.lng, s.lat, s.lng);
+      let penalty = 1.0;
+      for (const dz of dangers) {
+        if (minDistFromPointToSegmentM(
+          dz.lat, dz.lng,
+          userPos.lat, userPos.lng,
+          s.lat, s.lng,
+        ) <= dz.enclosingRadiusM + ROUTE_AVOID_MARGIN) {
+          penalty *= 2.0;
+        }
+      }
+      const score = d * penalty;
+      if (score < bestScore) { bestScore = score; bestShelter = s; }
+    }
+
+    // 全避難所が危険エリア内の場合は最近傍にフォールバック
+    if (!bestShelter) {
+      for (const s of shelterData as any[]) {
+        const d = distanceM(userPos.lat, userPos.lng, s.lat, s.lng);
+        if (d < bestScore) { bestScore = d; bestShelter = s; }
+      }
+    }
+
+    if (bestShelter) {
       setPendingDestination(null);
       webViewRef.current?.postMessage(JSON.stringify({ type: 'clearPendingPin' }));
-      setDestination({ lat: closest.lat, lng: closest.lng, name: closest.name, isShelter: true });
+      setDestination({ lat: bestShelter.lat, lng: bestShelter.lng, name: bestShelter.name, isShelter: true });
     }
   };
 
@@ -853,10 +1221,23 @@ export default function App() {
                       </Text>
                     </View>
                     {destination && distance !== null && !isRouting && (
-                      <View style={styles.distanceBadge}>
-                        <Text style={styles.distanceText}>
-                          {distance >= 1000 ? `${(distance / 1000).toFixed(1)}km` : `${distance}m`}
-                        </Text>
+                      <View style={styles.distanceRow}>
+                        {penetratedSummary !== null ? (
+                          <View style={styles.penetrationBadge}>
+                            <Text style={styles.penetrationText}>
+                              ⚠ 危険通過{penetratedSummary ? ` (${penetratedSummary})` : ''}
+                            </Text>
+                          </View>
+                        ) : isAvoidingDisaster ? (
+                          <View style={styles.avoidanceBadge}>
+                            <Text style={styles.avoidanceText}>⚠ 迂回中</Text>
+                          </View>
+                        ) : null}
+                        <View style={styles.distanceBadge}>
+                          <Text style={styles.distanceText}>
+                            {distance >= 1000 ? `${(distance / 1000).toFixed(1)}km` : `${distance}m`}
+                          </Text>
+                        </View>
                       </View>
                     )}
                   </View>
@@ -1002,7 +1383,7 @@ const styles = StyleSheet.create({
 
   historyButton: {
     position: 'absolute',
-    bottom: BOTTOM_TAB_HEIGHT + 144,
+    bottom: BOTTOM_TAB_HEIGHT + 194,
     right: Design.spacing.lg,
     backgroundColor: Design.colors.background,
     width: 46,
@@ -1010,17 +1391,13 @@ const styles = StyleSheet.create({
     borderRadius: Design.radius.md,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
     zIndex: 15,
     borderWidth: 1,
     borderColor: Design.colors.border,
   },
   locateButton: {
     position: 'absolute',
-    bottom: BOTTOM_TAB_HEIGHT + 80,
+    bottom: BOTTOM_TAB_HEIGHT + 130,
     right: Design.spacing.lg,
     backgroundColor: Design.colors.background,
     width: 52,
@@ -1028,26 +1405,18 @@ const styles = StyleSheet.create({
     borderRadius: Design.radius.lg,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
     zIndex: 15,
     borderWidth: 1,
     borderColor: Design.colors.border,
   },
   infoCard: {
     position: 'absolute',
-    bottom: BOTTOM_TAB_HEIGHT + 12,
+    bottom: BOTTOM_TAB_HEIGHT + 20,
     left: 20,
     right: 20,
     backgroundColor: Design.colors.background,
     borderRadius: 16,
     padding: 8,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
     zIndex: 10,
     borderWidth: 1,
     borderColor: Design.colors.border,
@@ -1067,6 +1436,38 @@ const styles = StyleSheet.create({
     fontSize: Design.fontSize.body,
     fontWeight: Design.fontWeight.bold,
     color: Design.colors.text,
+  },
+  distanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  avoidanceBadge: {
+    backgroundColor: '#FFF3CD',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Design.radius.md,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  avoidanceText: {
+    color: '#92400E',
+    fontWeight: Design.fontWeight.bold,
+    fontSize: 11,
+  },
+  // ── A-1: 危険エリア通過警告バッジ（フォールバック検出時に表示）──
+  penetrationBadge: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Design.radius.md,
+    borderWidth: 1.5,
+    borderColor: '#DC2626',
+  },
+  penetrationText: {
+    color: '#991B1B',
+    fontWeight: Design.fontWeight.bold,
+    fontSize: 11,
   },
   distanceBadge: {
     backgroundColor: Design.colors.primaryMuted,

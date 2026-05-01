@@ -682,6 +682,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
         .bg-green { background-color: #16A34A; }
         .bg-teal  { background-color: #0D9488; }
         .shelter-popup { font-weight: bold; color: #16A34A; }
+        .avoidance-tooltip { background: #FFF3CD; border: 1px solid #F59E0B; color: #92400E; font-weight: bold; font-size: 12px; border-radius: 6px; padding: 4px 8px; }
+        .danger-tooltip    { background: #DC2626; border: 1.5px solid #991B1B; color: #FFFFFF; font-weight: bold; font-size: 13px; border-radius: 6px; padding: 5px 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.35); }
 
         /* オフライン保存UI */
         #offlineBar {
@@ -1660,7 +1662,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
                 disasterMarkers.push(disasterLayerMap[id].centerDot);
             });
             Object.keys(injuredLayerMap).forEach(function(id) {
-                injuredMarkers.push(injuredLayerMap[id].circle);
                 injuredMarkers.push(injuredLayerMap[id].centerDot);
             });
             disasterMarkers.forEach(function(m) {
@@ -1778,9 +1779,34 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
                 if (message.type === 'drawRoute') {
                     if (routeLayer) map.removeLayer(routeLayer);
-                    routeLayer = L.polyline(message.coordinates, {
-                        color: '#007AFF', weight: 6, opacity: 0.8, lineJoin: 'round'
-                    }).addTo(map);
+                    var isAvoidance = !!message.isAvoidance;
+                    var penetrated  = !!message.penetrated;
+                    var penSummary  = message.penetratedSummary || '';
+                    // A-1: 危険通過=赤太破線（最優先表示）/ 災害回避=オレンジ破線 / 通常=青実線
+                    var routeOptions;
+                    if (penetrated) {
+                        routeOptions = { color: '#DC2626', weight: 7, opacity: 0.95, lineJoin: 'round', dashArray: '4, 8' };
+                    } else if (isAvoidance) {
+                        routeOptions = { color: '#F97316', weight: 6, opacity: 0.9, lineJoin: 'round', dashArray: '12, 6' };
+                    } else {
+                        routeOptions = { color: '#007AFF', weight: 6, opacity: 0.8, lineJoin: 'round' };
+                    }
+                    routeLayer = L.polyline(message.coordinates, routeOptions).addTo(map);
+                    if (penetrated) {
+                        // 危険通過は最も視認性を高くするため permanent ツールチップで常時表示
+                        routeLayer.bindTooltip(
+                            '⚠ 危険エリア通過注意' + (penSummary ? ' (' + penSummary + ')' : ''),
+                            {
+                                permanent: true, sticky: true, direction: 'center',
+                                className: 'danger-tooltip'
+                            }
+                        );
+                    } else if (isAvoidance) {
+                        routeLayer.bindTooltip('⚠ 災害回避ルート', {
+                            permanent: false, sticky: true,
+                            className: 'avoidance-tooltip'
+                        });
+                    }
                     map.fitBounds(routeLayer.getBounds(), { padding: [80, 80] });
                 }
 
@@ -1875,7 +1901,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
                             delete disasterLayerMap[id];
                         }
                         if (injuredLayerMap[id]) {
-                            map.removeLayer(injuredLayerMap[id].circle);
                             map.removeLayer(injuredLayerMap[id].centerDot);
                             delete injuredLayerMap[id];
                         }
@@ -1902,24 +1927,33 @@ svg.leaflet-image-layer.leaflet-interactive path {
                             ? e.enclosingRadiusM
                             : calcEnclosingRadius(e.witnessCoords, e.lat, e.lng);
                         var isInjured = e.category === 'injured';
-                        var circle = L.circle([e.lat, e.lng], {
-                            radius:      radiusM,
-                            color:       color,
-                            fillColor:   color,
-                            fillOpacity: 0.2,
-                            weight:      2.5,
-                        }).bindPopup(popup);
-                        var centerDot = L.circleMarker([e.lat, e.lng], {
-                            radius:      8,
-                            color:       'white',
-                            fillColor:   color,
-                            fillOpacity: 1.0,
-                            weight:      2,
-                        }).bindPopup(popup);
+                        var centerDot;
                         if (isInjured) {
-                            if (showInjured) { circle.addTo(map); centerDot.addTo(map); }
-                            injuredLayerMap[id] = { circle: circle, centerDot: centerDot, hash: newHash };
+                            var injuredIcon = L.divIcon({
+                                className: '',
+                                html: '<div style="width:30px;height:30px;background:#F97316;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px rgba(0,0,0,0.4);font-size:17px;line-height:1;">🩹</div>',
+                                iconSize:    [30, 30],
+                                iconAnchor:  [15, 15],
+                                popupAnchor: [0, -15],
+                            });
+                            centerDot = L.marker([e.lat, e.lng], { icon: injuredIcon }).bindPopup(popup);
+                            if (showInjured) centerDot.addTo(map);
+                            injuredLayerMap[id] = { centerDot: centerDot, hash: newHash };
                         } else {
+                            var circle = L.circle([e.lat, e.lng], {
+                                radius:      radiusM,
+                                color:       color,
+                                fillColor:   color,
+                                fillOpacity: 0.2,
+                                weight:      2.5,
+                            }).bindPopup(popup);
+                            centerDot = L.circleMarker([e.lat, e.lng], {
+                                radius:      8,
+                                color:       'white',
+                                fillColor:   color,
+                                fillOpacity: 1.0,
+                                weight:      2,
+                            }).bindPopup(popup);
                             if (showDisasters) { circle.addTo(map); centerDot.addTo(map); }
                             disasterLayerMap[id] = { circle: circle, centerDot: centerDot, hash: newHash };
                         }

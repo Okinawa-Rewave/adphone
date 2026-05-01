@@ -52,13 +52,25 @@ class GemmaModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
                 logMemory("init 開始前")
                 val t0 = System.currentTimeMillis()
 
-                android.util.Log.d("GemmaModule", "[init] CPU バックエンドで初期化中...")
-                val cpuOptions = LlmInference.LlmInferenceOptions.builder()
-                    .setModelPath(modelPath)
-                    .setMaxTokens(128)
-                    .setMaxNumImages(1)
-                    .build()
-                val inference = LlmInference.createFromOptions(reactApplicationContext, cpuOptions)
+                // GPU優先・CPU自動フォールバック
+                val inference = try {
+                    val gpuOptions = LlmInference.LlmInferenceOptions.builder()
+                        .setModelPath(modelPath)
+                        .setMaxTokens(256)
+                        .setMaxNumImages(1)
+                        .setPreferredBackend(LlmInference.Backend.GPU)
+                        .build()
+                    android.util.Log.d("GemmaModule", "[init] GPU バックエンドで試行中...")
+                    LlmInference.createFromOptions(reactApplicationContext, gpuOptions)
+                } catch (e: Exception) {
+                    android.util.Log.w("GemmaModule", "[init] GPU 失敗 → CPU にフォールバック: ${e.message}")
+                    val cpuOptions = LlmInference.LlmInferenceOptions.builder()
+                        .setModelPath(modelPath)
+                        .setMaxTokens(256)
+                        .setMaxNumImages(1)
+                        .build()
+                    LlmInference.createFromOptions(reactApplicationContext, cpuOptions)
+                }
 
                 llmInference = inference
                 val elapsed = System.currentTimeMillis() - t0
@@ -80,6 +92,14 @@ class GemmaModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .firstOrNull() ?: ""
+        return cleaned.trim()
+    }
+
+    // VLM用: モデルトークンを除去するが改行は保持する（【状況説明】など複数行の解析結果を活用するため）
+    private fun cleanVlmResult(rawResult: String): String {
+        var cleaned = rawResult.split("<end_of_turn>")[0]
+        cleaned = cleaned.split("<eos>")[0]
+        cleaned = cleaned.split("<start_of_turn>")[0]
         return cleaned.trim()
     }
 
@@ -128,13 +148,13 @@ class GemmaModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
                     ?: throw Exception("Failed to decode image.")
                 android.util.Log.d("GemmaModule", "[vlm 1/4] 元サイズ: ${rawBitmap.width}x${rawBitmap.height}")
 
-                val bitmap = resizeBitmap(rawBitmap, 128)
+                val bitmap = resizeBitmap(rawBitmap, 256)
                 if (bitmap !== rawBitmap) rawBitmap.recycle()
                 android.util.Log.d("GemmaModule", "[vlm 1/4] リサイズ後: ${bitmap.width}x${bitmap.height}")
                 val mpImage = BitmapImageBuilder(bitmap).build()
-                bitmap.recycle()
+                // bitmap は session.addImage() が使用中のため recycle しない（GC に任せる）
 
-                android.util.Log.d("GemmaModule", "[vlm 2/4] GC + セッション作成中...")
+                android.util.Log.d("GemmaModule", "[vlm 2/4] セッション作成中...")
                 logMemory("vlm セッション作成前")
                 val tSession = System.currentTimeMillis()
                 val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
@@ -144,7 +164,6 @@ class GemmaModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
                             .build()
                     )
                     .build()
-                System.gc()
                 val session = LlmInferenceSession.createFromOptions(inference, sessionOptions)
                 android.util.Log.d("GemmaModule", "[vlm 2/4] セッション作成完了 (${System.currentTimeMillis() - tSession}ms)")
 
@@ -160,7 +179,7 @@ class GemmaModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
                 android.util.Log.d("GemmaModule", "[vlm 3/4] 推論完了 (${System.currentTimeMillis() - tInfer}ms)")
                 android.util.Log.i("GemmaModule", "[vlm 4/4] 生結果: \"${result.take(200)}\"")
 
-                val cleaned = cleanResult(result)
+                val cleaned = cleanVlmResult(result)
                 android.util.Log.i("GemmaModule", "[vlm 4/4] クリーン結果: \"$cleaned\"")
                 android.util.Log.i("GemmaModule", "[vlm] 解析完了 合計${System.currentTimeMillis() - t0}ms")
                 logMemory("vlm 完了後")
