@@ -20,27 +20,16 @@ import { PermissionsAndroid, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { initTrustSystem } from "@/lib/userTrust";
-import GemmaModule from "@/lib/gemma";
-
-const GEMMA_MODEL_PATH = "/sdcard/gemma-3n-E4B-it-int4.litertlm";
 
 async function requestPermissions() {
   if (Platform.OS === "android") {
     try {
-      const results = await PermissionsAndroid.requestMultiple([
+      await PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         PermissionsAndroid.PERMISSIONS.CAMERA,
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
       ]);
-      
-      console.log("Permissions granted:", results);
-
-      // Gemmaモデルの初期化
-      console.log("Initializing Gemma model...");
-      const success = await GemmaModule.initializeModel(GEMMA_MODEL_PATH);
-      console.log("Gemma model initialized:", success);
     } catch (err) {
-      console.warn("Permission or Init error:", err);
+      console.warn("Permission error:", err);
     }
   }
 }

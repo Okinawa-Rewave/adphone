@@ -85,6 +85,7 @@ export default function AdphoneSettingsScreen() {
   } = useBleContext();
 
   const [inputText, setInputText] = useState("");
+  const [destText, setDestText] = useState("");
   const [connectingId, setConnectingId] = useState<string | null>(null);
 
   const isConnected = bleState === "connected";
@@ -103,7 +104,9 @@ export default function AdphoneSettingsScreen() {
   const handleSend = async () => {
     const text = inputText.trim();
     if (!text) return;
-    await sendText(text);
+    const dest = destText.trim();
+    const payload = dest ? `--target ${dest} ${text}` : text;
+    await sendText(payload);
     setInputText("");
   };
 
@@ -184,6 +187,15 @@ export default function AdphoneSettingsScreen() {
       {/* ── 接続済みUI（送受信） ─────────────────────────────────────────────── */}
       {isConnected && (
         <>
+          <TextInput
+            style={[styles.input, styles.destInput]}
+            value={destText}
+            onChangeText={setDestText}
+            placeholder="送信先アドレス（半角数字、省略=ブロードキャスト）"
+            placeholderTextColor={Design.colors.textMuted}
+            keyboardType="number-pad"
+            returnKeyType="next"
+          />
           <View style={styles.sendRow}>
             <TextInput
               style={styles.input}
@@ -352,6 +364,9 @@ const styles = StyleSheet.create({
     color: Design.colors.textSecondary,
   },
   // ── 送受信UI ─────────────────────────────────────────────────────────────────
+  destInput: {
+    marginBottom: Design.spacing.sm,
+  },
   sendRow: {
     flexDirection: "row",
     alignItems: "center",

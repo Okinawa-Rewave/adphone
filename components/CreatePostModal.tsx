@@ -4,7 +4,6 @@ import {
   Image,
   KeyboardAvoidingView,
   Modal,
-  NativeModules,
   Platform,
   ScrollView,
   StyleSheet,
@@ -34,9 +33,6 @@ import { useBleContext } from "@/contexts/BleContext";
 import { useNotifications } from "@/contexts/NotificationContext";
 import type { DisasterType } from "@/contexts/NotificationContext";
 import { useDisasterReport } from "@/contexts/DisasterReportContext";
-import GemmaModule from "@/lib/gemma";
-
-const GEMMA_MODEL_PATH = "/sdcard/gemma-3n-E4B-it-int4.litertlm";
 
 const DISASTER_OPTIONS: { type: DisasterType; label: string; Icon: any; color: string }[] = [
   { type: "earthquake", label: "地震",     Icon: AlertTriangle, color: Design.colors.disasterEarthquake },
@@ -64,7 +60,6 @@ export function CreatePostModal({ visible, onClose }: Props) {
   const [showCamera, setShowCamera] = useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [damageLevel, setDamageLevel] = useState<DamageLevel>(null);
-  const [analyzing, setAnalyzing] = useState(false);
 
   // GPS
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -122,40 +117,8 @@ export function CreatePostModal({ visible, onClose }: Props) {
     if (!photo) return;
     setPhotoUri(photo.uri);
     setShowCamera(false);
-    setAnalyzing(true);
-    try {
-      // モデルが未初期化の場合（起動時の初期化に失敗していた場合など）ここで再試行
-      await GemmaModule.initializeModel(GEMMA_MODEL_PATH);
-
-      const prompt = "この画像に映っている建物の被害状況を分析してください。回答は以下の形式で始めてください：\n【被害レベル】Lv1, Lv2, Lv3のいずれか\n【状況説明】簡潔な説明";
-      const result = await GemmaModule.generateResponseWithImage(prompt, photo.uri);
-      console.log("[Gemma] Analysis Result:", result);
-
-      // 被害レベルの抽出 (Lv1, Lv2, Lv3)
-      if (result.includes("Lv3")) {
-        setDamageLevel("Lv3");
-      } else if (result.includes("Lv2")) {
-        setDamageLevel("Lv2");
-      } else if (result.includes("Lv1")) {
-        setDamageLevel("Lv1");
-      } else {
-        setDamageLevel("manual");
-      }
-
-      // 状況説明の抽出とセット
-      const descMatch = result.match(/【状況説明】(.*)/s);
-      if (descMatch && descMatch[1]) {
-        setContent(descMatch[1].trim());
-      } else if (result.length > 5) {
-        // 形式が違っても、ある程度長さがあればそのままセット
-        setContent(result.replace(/【被害レベル】Lv[1-3]/, "").trim());
-      }
-    } catch (e) {
-      console.error("[Gemma] Analysis failed:", e);
-      setDamageLevel("manual");
-    } finally {
-      setAnalyzing(false);
-    }
+    // 撮影後は手動でダメージレベルを選択
+    setDamageLevel("manual");
   };
 
 
@@ -318,10 +281,8 @@ export function CreatePostModal({ visible, onClose }: Props) {
             <View style={styles.photoResult}>
               <Image source={{ uri: photoUri }} style={styles.thumbnail} resizeMode="cover" />
               <View style={styles.damageInfo}>
-                {analyzing ? (
-                  <ActivityIndicator size="small" color={Design.colors.primary} />
-                ) : damageLevel === "manual" ? (
-                  // AI判定不可 → 手動選択
+                {damageLevel === "manual" ? (
+                  // 手動選択
                   <>
                     <Text style={styles.manualLabel}>損傷レベルを選択</Text>
                     <View style={styles.manualBtns}>
