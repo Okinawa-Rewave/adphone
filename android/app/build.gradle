@@ -120,6 +120,7 @@ android {
     packagingOptions {
         jniLibs {
             useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
+            pickFirsts += ['lib/**/libtensorflowlite_jni.so', 'lib/**/libtensorflowlite_gpu_jni.so']
         }
     }
     androidResources {
@@ -153,6 +154,7 @@ dependencies {
 
     implementation 'com.google.mediapipe:tasks-genai:0.10.33'
     implementation 'com.google.mediapipe:tasks-vision:0.10.33'
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
