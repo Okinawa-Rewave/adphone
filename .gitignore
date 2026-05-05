@@ -81,3 +81,7 @@ yarn-error.*
 # @end expo-cli
 
 GemmaVlmApp/
+
+.pptx
+
+.claude/

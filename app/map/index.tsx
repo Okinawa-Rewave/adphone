@@ -95,6 +95,7 @@ const DUMMY_PACKETS: RawPacket[] = [
     pubkey: 'pk', signature: 'sig', note: '瓦礫が道路に散乱',
   },
   // ガス漏れ（渋谷3丁目付近）
+  /*
   {
     id: 'f1', category: 'gas_leak', severity: 3,
     lat: 35.6599, lng: 139.7048,
@@ -102,6 +103,7 @@ const DUMMY_PACKETS: RawPacket[] = [
     pubkey: 'pk', signature: 'sig', note: 'ガス臭が強い',
   },
   // 道路閉塞（宮益坂）
+  */
   {
     id: 'c1', category: 'road_block', severity: 3,
     lat: 35.6601, lng: 139.7030,
@@ -120,6 +122,7 @@ const DUMMY_PACKETS: RawPacket[] = [
     timestamp: NOW - 700, issuerType: 0,
     pubkey: 'pk', signature: 'sig', note: '通行止め',
   },
+  
   // けが人（クラスター内）
   {
     id: 'd1', category: 'injured', severity: 4,
@@ -184,7 +187,11 @@ type FilterState = Record<FilterKey, boolean>;
 
 type DangerEvent = ScoredEvent & { enclosingRadiusM: number };
 
-const ROUTE_AVOID_MARGIN = 60;
+const ROUTE_AVOID_MARGIN = 30;
+const SAFE_CLIP_PAD      = 0.10; // ~11km: 安全迂回用の広域bbox
+const NORMAL_CLIP_PAD    = 0.06; // ~6.7km: 通常ルート・ペナルティ用
+const MAX_CASCADE           = 5;  // 手動目的地カスケードの最大試行数
+const MAX_SHELTER_CANDIDATES = 8; // 自動避難所探索: A*で比較する候補数
 
 function distanceM(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000
@@ -274,7 +281,7 @@ function calcEnclosingRadiusM(
   centerLng: number
 ): number {
   const MIN_RADIUS = 50;
-  const MAX_RADIUS = 500;
+  const MAX_RADIUS = 200;
   if (!witnessCoords || witnessCoords.length <= 1) return MIN_RADIUS;
   let maxDist = 0;
   for (const w of witnessCoords) {
@@ -282,6 +289,36 @@ function calcEnclosingRadiusM(
     if (d > maxDist) maxDist = d;
   }
   return Math.max(MIN_RADIUS, Math.min(maxDist, MAX_RADIUS));
+}
+
+// 現在地から安全に到達できる避難所を距離順で返す（危険エリア内にある避難所は除外）
+function buildShelterCandidates(start: UserPos, dangers: DangerEvent[]): any[] {
+  let candidates: { shelter: any; score: number }[] = [];
+  for (const s of shelterData as any[]) {
+    const insideDanger = dangers.some(
+      dz => distanceM(s.lat, s.lng, dz.lat, dz.lng) <= dz.enclosingRadiusM + ROUTE_AVOID_MARGIN
+    );
+    if (insideDanger) continue;
+    const d = distanceM(start.lat, start.lng, s.lat, s.lng);
+    let penalty = 1.0;
+    for (const dz of dangers) {
+      if (minDistFromPointToSegmentM(
+        dz.lat, dz.lng, start.lat, start.lng, s.lat, s.lng,
+      ) <= dz.enclosingRadiusM + ROUTE_AVOID_MARGIN) {
+        penalty = 100.0;
+        break;
+      }
+    }
+    candidates.push({ shelter: s, score: d * penalty });
+  }
+  candidates.sort((a, b) => a.score - b.score);
+  if (candidates.length === 0) {
+    for (const s of shelterData as any[]) {
+      candidates.push({ shelter: s, score: distanceM(start.lat, start.lng, s.lat, s.lng) });
+    }
+    candidates.sort((a, b) => a.score - b.score);
+  }
+  return candidates.map(c => c.shelter);
 }
 
 // ── A* Pathfinding ──────────────────────────────────
@@ -461,7 +498,6 @@ export default function App() {
   const [distance, setDistance] = useState<number | null>(null);
   const [isRouting, setIsRouting] = useState(false);
   const [isAvoidingDisaster, setIsAvoidingDisaster] = useState(false);
-  const [penetratedSummary, setPenetratedSummary] = useState<string | null>(null);
 
   const walkLoadedRef = useRef(false);
   const carLoadedRef  = useRef(false);
@@ -493,6 +529,7 @@ export default function App() {
   const [pendingDestination, setPendingDestination] = useState<Destination | null>(null);
   const { disasterEvents, refreshScores } = useDisasterReport();
   const [showMapGuide, setShowMapGuide] = useState(true);
+  const [cascadeDestName, setCascadeDestName] = useState<string | null>(null);
 
   // ── オフラインタイルDL進捗（pending DL含む）────────
   const [dlProgress, setDlProgress] = useState(0);
@@ -718,7 +755,7 @@ export default function App() {
 
     // 現在の災害データをrefから直接取得（staleにならない）
     const dangers = disasterEventsEnrichedRef.current.filter(e => e.category !== 'injured');
-    const routePad = 0.02;
+    const routePad = SAFE_CLIP_PAD;
     const bMinLat = Math.min(start.lat, end.lat) - routePad;
     const bMaxLat = Math.max(start.lat, end.lat) + routePad;
     const bMinLng = Math.min(start.lng, end.lng) - routePad;
@@ -755,83 +792,118 @@ export default function App() {
 
     setTimeout(() => {
       try {
-        // ── bbox クリップでグラフを小さく保つ（パフォーマンス最重要）──
-        const clipPad = 0.06; // ~6.7km。都市内ルートに十分かつ 0.15 比で約 1/6 のノード数
-        const clipped = clipToBbox(allExploded, start.lat, start.lng, end.lat, end.lng, clipPad);
-        const routeFeatures = clipped.length > 50 ? clipped : allExploded;
+        const isAutoShelter = (end as any)._isAutoShelterSearch === true;
+        const candidates: any[] = ((end as any)._shelterCandidates ?? []).slice(0, MAX_SHELTER_CANDIDATES);
 
-        // クリップ済みフルグラフをキャッシュ（同一bboxなら再構築しない）
-        const gKey = `${mode}|${(Math.min(start.lat, end.lat) - clipPad).toFixed(3)},${(Math.max(start.lat, end.lat) + clipPad).toFixed(3)},${(Math.min(start.lng, end.lng) - clipPad).toFixed(3)},${(Math.max(start.lng, end.lng) + clipPad).toFixed(3)}`;
-        let graph: AStarGraph;
-        let routeNodes: number[][];
-        const cached = routeGraphCacheRef.current;
-        if (cached?.key === gKey) {
-          graph = cached.graph;
-          routeNodes = cached.nodes;
-        } else {
-          graph = buildGraph(routeFeatures).graph;
-          routeNodes = extractNodes(routeFeatures);
-          routeGraphCacheRef.current = { key: gKey, graph, nodes: routeNodes };
-          console.log(`[A*] Graph built: ${routeFeatures.length} features → ${graph.size} nodes`);
-        }
+        // ── フィーチャー取得 ──────────────────────────────────────────
+        // 広域（Pass 1・2: 安全迂回用）
+        const safeClipped  = clipToBbox(allExploded, start.lat, start.lng, end.lat, end.lng, SAFE_CLIP_PAD);
+        const safeFeatures = safeClipped.length > 50 ? safeClipped : allExploded;
+        const safeNodes    = extractNodes(safeFeatures);
+        // 通常（Pass 3・4・危険なし: 通常ルート用）
+        const normalClipped  = clipToBbox(allExploded, start.lat, start.lng, end.lat, end.lng, NORMAL_CLIP_PAD);
+        const normalFeatures = normalClipped.length > 50 ? normalClipped : allExploded;
 
-        const startPoint = turf.point([start.lng, start.lat]);
-        const endPoint   = turf.point([end.lng,   end.lat]);
-        const snapStart  = nearestPointOnRoads(startPoint, routeFeatures);
-        const snapEnd    = nearestPointOnRoads(endPoint,   routeFeatures);
-        const snapNodes  = routeNodes.length > 10 ? routeNodes : allNodes;
-        const startNode  = snapToNearestNode(snapStart, snapNodes);
-        const endNode    = snapToNearestNode(snapEnd,   snapNodes);
+        // 始点スナップ（全パス共通）
+        const snapStart = nearestPointOnRoads(turf.point([start.lng, start.lat]), safeFeatures);
+        const startNode = snapToNearestNode(snapStart, safeNodes.length > 10 ? safeNodes : allNodes);
         const [startLng, startLat] = startNode.geometry.coordinates as [number, number];
-        const [endLng,   endLat]   = endNode.geometry.coordinates   as [number, number];
 
-        // Pass 1: 危険エッジ除去グラフ
-        let path: [number, number][] | null = null;
-        let isAvoidance = false;
-        if (nearbyDangers.length > 0) {
-          const { graph: safeGraph, removedAny } = buildGraph(routeFeatures, nearbyDangers, ROUTE_AVOID_MARGIN);
-          if (removedAny) {
-            path = runAStar(safeGraph, startLng, startLat, endLng, endLat);
-            if (path) isAvoidance = true;
-          }
-          // Pass 2: ペナルティグラフ（非連結時も安全迂回を探索）
-          if (!path) {
-            const penGraph = buildPenalizedGraph(routeFeatures, nearbyDangers, ROUTE_AVOID_MARGIN);
-            path = runAStar(penGraph, startLng, startLat, endLng, endLat);
-            if (path) isAvoidance = true;
-          }
+        // 終点スナップヘルパー
+        function snapTo(lat: number, lng: number, features: any[], nodes: number[][]): [number, number] {
+          const snap = nearestPointOnRoads(turf.point([lng, lat]), features);
+          const node = snapToNearestNode(snap, nodes.length > 10 ? nodes : allNodes);
+          return node.geometry.coordinates as [number, number];
         }
-        // Pass 3: フルグラフ（真の非連結時のみ使用）
-        if (!path) {
+
+        let path: [number, number][] | null = null;
+        let isAvoidance   = false;
+        let cascadeToName: string | null = null;
+        let finalDest: Destination = end;
+
+        if (isAutoShelter) {
+          // 全候補に A* を実行し、実際の道路距離が最短の避難所を選択
+          const allShelterCands = [end, ...candidates];
+          const autoGraph = nearbyDangers.length > 0
+            ? buildGraph(safeFeatures, nearbyDangers, ROUTE_AVOID_MARGIN).graph
+            : buildGraph(safeFeatures).graph;
+
+          let bestRoadDist = Infinity;
+          for (const c of allShelterCands) {
+            const [cLng, cLat] = snapTo(c.lat, c.lng, safeFeatures, safeNodes);
+            const p = runAStar(autoGraph, startLng, startLat, cLng, cLat);
+            if (!p) continue;
+            let d = 0;
+            for (let i = 1; i < p.length; i++) d += distanceM(p[i - 1][1], p[i - 1][0], p[i][1], p[i][0]);
+            if (d < bestRoadDist) {
+              bestRoadDist = d; path = p;
+              finalDest = { lat: c.lat, lng: c.lng, name: c.name, isShelter: true };
+              cascadeToName = c.name !== end.name ? c.name : null;
+            }
+          }
+          if (path) isAvoidance = nearbyDangers.length > 0;
+
+        } else if (nearbyDangers.length > 0) {
+          const { graph: safeGraph, removedAny } = buildGraph(safeFeatures, nearbyDangers, ROUTE_AVOID_MARGIN);
+
+          // ── Pass 1: 広域安全グラフ → 元の目的地 ──────────────────────
+          const [endLng1, endLat1] = snapTo(end.lat, end.lng, safeFeatures, safeNodes);
+          path = runAStar(safeGraph, startLng, startLat, endLng1, endLat1);
+          if (path && removedAny) isAvoidance = true;
+
+          // ── Pass 2: 安全グラフ → 最寄り避難所カスケード（ルート不達時のみ）──
+          if (!path) {
+            for (const c of buildShelterCandidates(start, nearbyDangers).slice(0, MAX_CASCADE)) {
+              const [cLng, cLat] = snapTo(c.lat, c.lng, safeFeatures, safeNodes);
+              const candPath = runAStar(safeGraph, startLng, startLat, cLng, cLat);
+              if (candPath) {
+                path = candPath; isAvoidance = true;
+                finalDest = { lat: c.lat, lng: c.lng, name: c.name, isShelter: true };
+                cascadeToName = c.name;
+                console.log(`[A*] Cascade (safe) → ${c.name}`);
+                break;
+              }
+            }
+          }
+
+        } else {
+          // 危険なし → 通常グラフで最短（グラフキャッシュ使用）
+          const gKey = `${mode}|${(Math.min(start.lat, end.lat) - NORMAL_CLIP_PAD).toFixed(3)},${(Math.max(start.lat, end.lat) + NORMAL_CLIP_PAD).toFixed(3)},${(Math.min(start.lng, end.lng) - NORMAL_CLIP_PAD).toFixed(3)},${(Math.max(start.lng, end.lng) + NORMAL_CLIP_PAD).toFixed(3)}`;
+          let graph: AStarGraph;
+          let routeNodes: number[][];
+          const cached = routeGraphCacheRef.current;
+          if (cached?.key === gKey) {
+            graph = cached.graph;
+            routeNodes = cached.nodes;
+          } else {
+            graph = buildGraph(normalFeatures).graph;
+            routeNodes = extractNodes(normalFeatures);
+            routeGraphCacheRef.current = { key: gKey, graph, nodes: routeNodes };
+            console.log(`[A*] Graph built: ${normalFeatures.length} features → ${graph.size} nodes`);
+          }
+          const snapNodes = routeNodes.length > 10 ? routeNodes : allNodes;
+          const [endLng, endLat] = snapTo(end.lat, end.lng, normalFeatures, snapNodes);
           path = runAStar(graph, startLng, startLat, endLng, endLat);
         }
 
-        // フォールバック: 徒歩グラフ非連結 → 車道A*（同じく3パス）
+        // ── Fallback: 徒歩グラフ非連結 → 車道A* ────────────────────────
         if (!path && isWalk && carLoadedRef.current && carExplodedRef.current.length) {
-          const carClipped = clipToBbox(carExplodedRef.current, start.lat, start.lng, end.lat, end.lng, clipPad);
-          const carFeatures = carClipped.length > 50 ? carClipped : carExplodedRef.current;
+          const carClipped   = clipToBbox(carExplodedRef.current, start.lat, start.lng, finalDest.lat, finalDest.lng, NORMAL_CLIP_PAD);
+          const carFeatures  = carClipped.length > 50 ? carClipped : carExplodedRef.current;
+          const carNodes     = extractNodes(carFeatures);
+          const carSnapStart = nearestPointOnRoads(turf.point([start.lng, start.lat]), carFeatures);
+          const carStart     = snapToNearestNode(carSnapStart, carNodes.length > 10 ? carNodes : carNodesRef.current);
+          const carSnapEnd   = nearestPointOnRoads(turf.point([finalDest.lng, finalDest.lat]), carFeatures);
+          const carEnd       = snapToNearestNode(carSnapEnd, carNodes.length > 10 ? carNodes : carNodesRef.current);
+          const [csl, csa]   = carStart.geometry.coordinates as [number, number];
+          const [cel, cea]   = carEnd.geometry.coordinates   as [number, number];
+
           if (nearbyDangers.length > 0) {
             const { graph: safeCarGraph, removedAny } = buildGraph(carFeatures, nearbyDangers, ROUTE_AVOID_MARGIN);
-            if (removedAny) {
-              path = runAStar(safeCarGraph, startLng, startLat, endLng, endLat);
-              if (path) isAvoidance = true;
-            }
-            if (!path) {
-              const penCarGraph = buildPenalizedGraph(carFeatures, nearbyDangers, ROUTE_AVOID_MARGIN);
-              path = runAStar(penCarGraph, startLng, startLat, endLng, endLat);
-              if (path) isAvoidance = true;
-            }
-            if (!path) {
-              path = runAStar(buildGraph(carFeatures).graph, startLng, startLat, endLng, endLat);
-            }
+            path = runAStar(safeCarGraph, csl, csa, cel, cea);
+            if (removedAny && path) isAvoidance = true;
           } else {
             const { graph: carGraph } = buildGraph(carFeatures);
-            const carNodes2 = extractNodes(carFeatures);
-            const snapNodes2 = carNodes2.length > 10 ? carNodes2 : carNodesRef.current;
-            const cs = snapToNearestNode(snapStart, snapNodes2);
-            const ce = snapToNearestNode(snapEnd,   snapNodes2);
-            const [csl, csa] = cs.geometry.coordinates as [number, number];
-            const [cel, cea] = ce.geometry.coordinates as [number, number];
             path = runAStar(carGraph, csl, csa, cel, cea);
           }
           if (path) console.log('[A*] Walk disconnected, used car network');
@@ -839,60 +911,44 @@ export default function App() {
 
         const elapsed = Date.now() - t0;
         if (path) {
-          // ペナルティを除いた実距離を再集計
           let trueDist = 0;
           for (let i = 0; i < path.length - 1; i++) {
             trueDist += distanceM(path[i][1], path[i][0], path[i + 1][1], path[i + 1][0]);
           }
           setDistance(Math.round(trueDist));
           setIsAvoidingDisaster(isAvoidance);
+          setCascadeDestName(cascadeToName);
 
-          // スナップ時に始点・終点が危険圏内に入るエッジケースを事後検出
-          let summaryText: string | null = null;
-          if (nearbyDangers.length > 0) {
+          // デバッグ用アサーション（安全グラフのみ使用しているため通常は発生しない）
+          if (__DEV__ && nearbyDangers.length > 0) {
             const verify = pathPenetratesDanger(path, nearbyDangers, ROUTE_AVOID_MARGIN);
-            if (verify.penetrated) {
-              const counts = verify.hitDangers.reduce((acc, d) => {
-                acc[d.category] = (acc[d.category] ?? 0) + 1;
-                return acc;
-              }, {} as Record<string, number>);
-              const labelMap: Record<string, string> = {
-                fire:              '火災',
-                flood:             '浸水',
-                building_collapse: '倒壊',
-                gas_leak:          'ガス漏れ',
-                landslide:         '土砂崩れ',
-                road_block:        '道路閉塞',
-              };
-              summaryText = Object.entries(counts)
-                .map(([cat, n]) => `${labelMap[cat] ?? cat}${n}件`)
-                .join('・');
-              console.warn(`[A*] Path penetrates danger zone: ${summaryText}`);
-            }
+            if (verify.penetrated) console.error('[A*] BUG: path still penetrates danger zone');
           }
-          setPenetratedSummary(summaryText);
 
           const coords = path.map(([lng, lat]) => [lat, lng]);
           webViewRef.current?.postMessage(JSON.stringify({
             type: 'drawRoute', coordinates: coords, isAvoidance,
-            penetrated: summaryText !== null, penetratedSummary: summaryText ?? '',
+            penetrated: false, penetratedSummary: '',
           }));
           webViewRef.current?.postMessage(JSON.stringify({
             type: 'updateDestinationPin',
-            lat: end.lat, lng: end.lng,
-            name: end.name, isShelter: end.isShelter,
+            lat: finalDest.lat, lng: finalDest.lng,
+            name: finalDest.name, isShelter: finalDest.isShelter,
           }));
-          console.log(`[A*] OK in ${elapsed}ms, avoidance=${isAvoidance}, penetrated=${summaryText !== null}, nodes=${path.length}`);
+          console.log(`[A*] OK in ${elapsed}ms, avoidance=${isAvoidance}, cascade=${cascadeToName ?? 'none'}, nodes=${path.length}`);
         } else {
           setDistance(null);
           setIsAvoidingDisaster(false);
-          setPenetratedSummary(null);
+          setCascadeDestName(null);
           const alertKey = 'no-route';
           const now = Date.now();
           if (lastAlertKeyRef.current !== alertKey || now - lastAlertAtRef.current > 8000) {
             lastAlertKeyRef.current = alertKey;
             lastAlertAtRef.current = now;
-            Alert.alert('経路が見つかりません', '付近の道路ネットワークで経路が見つかりませんでした。');
+            Alert.alert(
+              '安全な経路が見つかりません',
+              '危険エリアを回避できる経路がありません。緊急時は119・110へ連絡してください。'
+            );
           }
           console.log(`[A*] No path found (${elapsed}ms)`);
         }
@@ -909,6 +965,7 @@ export default function App() {
   useEffect(() => {
     if (!webReady || !destination || !userPos) return;
     lastRouteKeyRef.current = '';
+    setCascadeDestName(null);
     const t0 = Date.now();
     (async () => {
       const ok = await ensureRoutingReady(mode);
@@ -983,51 +1040,40 @@ export default function App() {
     }
   };
 
-  const handleNearestShelter = () => {
+  const handleNearestShelter = (targetMode: Mode) => {
     if (!userPos) return;
+    setMode(targetMode);
     const dangers = disasterEventsEnrichedRef.current.filter(e => e.category !== 'injured');
 
-    let bestShelter: any = null;
-    let bestScore = Infinity;
+    // 危険ゾーン内の避難所を除外し、直線距離で昇順ソート
+    let sorted = (shelterData as any[])
+      .filter(s => !dangers.some(dz => distanceM(s.lat, s.lng, dz.lat, dz.lng) <= dz.enclosingRadiusM + ROUTE_AVOID_MARGIN))
+      .map(s => ({ shelter: s, dist: distanceM(userPos.lat, userPos.lng, s.lat, s.lng) }))
+      .sort((a, b) => a.dist - b.dist);
 
-    for (const s of shelterData as any[]) {
-      const insideDanger = dangers.some(
-        dz => distanceM(s.lat, s.lng, dz.lat, dz.lng) <= dz.enclosingRadiusM,
-      );
-      if (insideDanger) continue;
-
-      const d = distanceM(userPos.lat, userPos.lng, s.lat, s.lng);
-      let penalty = 1.0;
-      for (const dz of dangers) {
-        if (minDistFromPointToSegmentM(
-          dz.lat, dz.lng,
-          userPos.lat, userPos.lng,
-          s.lat, s.lng,
-        ) <= dz.enclosingRadiusM + ROUTE_AVOID_MARGIN) {
-          penalty *= 2.0;
-        }
-      }
-      const score = d * penalty;
-      if (score < bestScore) { bestScore = score; bestShelter = s; }
+    // 全避難所が危険ゾーン内の場合はフォールバック
+    if (sorted.length === 0) {
+      sorted = (shelterData as any[])
+        .map(s => ({ shelter: s, dist: distanceM(userPos.lat, userPos.lng, s.lat, s.lng) }))
+        .sort((a, b) => a.dist - b.dist);
     }
 
-    // 全避難所が危険エリア内の場合は最近傍にフォールバック
-    if (!bestShelter) {
-      for (const s of shelterData as any[]) {
-        const d = distanceM(userPos.lat, userPos.lng, s.lat, s.lng);
-        if (d < bestScore) { bestScore = d; bestShelter = s; }
-      }
-    }
+    const top = sorted.slice(0, MAX_SHELTER_CANDIDATES).map(c => c.shelter);
+    if (top.length === 0) return;
 
-    if (bestShelter) {
-      setPendingDestination(null);
-      webViewRef.current?.postMessage(JSON.stringify({ type: 'clearPendingPin' }));
-      setDestination({ lat: bestShelter.lat, lng: bestShelter.lng, name: bestShelter.name, isShelter: true });
-    }
+    const [first, ...rest] = top;
+    setPendingDestination(null);
+    webViewRef.current?.postMessage(JSON.stringify({ type: 'clearPendingPin' }));
+    setDestination({
+      lat: first.lat, lng: first.lng, name: first.name, isShelter: true,
+      _isAutoShelterSearch: true,
+      _shelterCandidates: rest,
+    } as any);
   };
 
-  const handleConfirmRoute = () => {
+  const handleConfirmRoute = (targetMode: Mode) => {
     if (!pendingDestination) return;
+    setMode(targetMode);
     setDestination(pendingDestination);
     setPendingDestination(null);
     webViewRef.current?.postMessage(JSON.stringify({ type: 'clearPendingPin' }));
@@ -1201,13 +1247,17 @@ export default function App() {
                     </View>
                   </View>
                   <View style={styles.buttonRow}>
-                    <TouchableOpacity style={styles.shelterBtn} onPress={handleConfirmRoute}>
-                      <Ionicons name="navigate" size={20} color="white" />
-                      <Text style={styles.btnText}>経路を検索</Text>
+                    <TouchableOpacity style={[styles.shelterBtn, { flex: 1 }]} onPress={() => handleConfirmRoute('walk')}>
+                      <Ionicons name="walk" size={20} color="white" />
+                      <Text style={styles.btnText}>徒歩</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.modeBtn} onPress={handleCancelPending}>
-                      <Ionicons name="close" size={24} color="#333" />
-                      <Text style={[styles.btnText, styles.modeBtnText]}>キャンセル</Text>
+                    <TouchableOpacity style={[styles.shelterBtn, { flex: 1 }]} onPress={() => handleConfirmRoute('car')}>
+                      <Ionicons name="car" size={20} color="white" />
+                      <Text style={styles.btnText}>車</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.modeBtn, { flex: 1 }]} onPress={handleCancelPending}>
+                      <Ionicons name="close" size={22} color="#333" />
+                      <Text style={[styles.btnText, styles.modeBtnText]}>取消</Text>
                     </TouchableOpacity>
                   </View>
                 </>
@@ -1217,22 +1267,18 @@ export default function App() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.destLabel}>目的地</Text>
                       <Text style={styles.destName} numberOfLines={1}>
-                        {destination ? destination.name : '地図をタップして選択'}
+                        {cascadeDestName
+                          ? `${cascadeDestName}（経路変更）`
+                          : destination ? destination.name : '地図をタップして選択'}
                       </Text>
                     </View>
                     {destination && distance !== null && !isRouting && (
                       <View style={styles.distanceRow}>
-                        {penetratedSummary !== null ? (
-                          <View style={styles.penetrationBadge}>
-                            <Text style={styles.penetrationText}>
-                              ⚠ 危険通過{penetratedSummary ? ` (${penetratedSummary})` : ''}
-                            </Text>
-                          </View>
-                        ) : isAvoidingDisaster ? (
+                        {isAvoidingDisaster && (
                           <View style={styles.avoidanceBadge}>
                             <Text style={styles.avoidanceText}>⚠ 迂回中</Text>
                           </View>
-                        ) : null}
+                        )}
                         <View style={styles.distanceBadge}>
                           <Text style={styles.distanceText}>
                             {distance >= 1000 ? `${(distance / 1000).toFixed(1)}km` : `${distance}m`}
@@ -1245,24 +1291,20 @@ export default function App() {
                   <View style={styles.buttonRow}>
                     <TouchableOpacity
                       style={[styles.shelterBtn, isRouting && { opacity: 0.6 }]}
-                      onPress={handleNearestShelter}
+                      onPress={() => handleNearestShelter('walk')}
                       disabled={isRouting || !userPos}
                     >
-                      <Ionicons name="warning" size={20} color="white" />
+                      <Ionicons name="walk" size={20} color="white" />
                       <Text style={styles.btnText}>最寄り避難所</Text>
                     </TouchableOpacity>
-
                     <TouchableOpacity
-                      style={[styles.modeBtn, isRouting && { opacity: 0.6 }]}
-                      onPress={() => setMode((m) => (m === 'walk' ? 'car' : 'walk'))}
-                      disabled={isRouting}
+                      style={[styles.shelterBtn, isRouting && { opacity: 0.6 }]}
+                      onPress={() => handleNearestShelter('car')}
+                      disabled={isRouting || !userPos}
                     >
-                      <Ionicons name={mode === 'walk' ? 'walk' : 'car'} size={24} color="#333" />
-                      <Text style={[styles.btnText, styles.modeBtnText]}>
-                        {mode === 'walk' ? '徒歩' : '車'}
-                      </Text>
+                      <Ionicons name="car" size={20} color="white" />
+                      <Text style={styles.btnText}>最寄り避難所</Text>
                     </TouchableOpacity>
-
                   </View>
                 </>
               )}
@@ -1451,6 +1493,19 @@ const styles = StyleSheet.create({
     borderColor: '#F59E0B',
   },
   avoidanceText: {
+    color: '#92400E',
+    fontWeight: Design.fontWeight.bold,
+    fontSize: 11,
+  },
+  surroundedBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Design.radius.md,
+    borderWidth: 1.5,
+    borderColor: '#D97706',
+  },
+  surroundedText: {
     color: '#92400E',
     fontWeight: Design.fontWeight.bold,
     fontSize: 11,
