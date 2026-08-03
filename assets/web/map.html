@@ -1272,7 +1272,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         // ── tileLayerOffline セットアップ ──────────────────────
         var tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-        var map = L.map('map', { zoomControl: false }).setView([26.5915, 127.9775], 14);
+        var map = L.map('map', { zoomControl: false }).setView([26.5267, 128.0303], 14);
 
         // 初回描画は通常タイルで高速化し、offline layerは遅延初期化
         var tileLayer = L.tileLayer(tileUrl, {
@@ -1773,6 +1773,13 @@ svg.leaflet-image-layer.leaflet-interactive path {
             if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(msg);
         });
 
+        // #4: ユーザーが手で地図をドラッグしたら追従モードを解除する通知
+        map.on('dragstart', function() {
+            if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'userPanned' }));
+            }
+        });
+
         function handleMessage(data) {
             try {
                 var message = JSON.parse(data);
@@ -1808,6 +1815,16 @@ svg.leaflet-image-layer.leaflet-interactive path {
                         });
                     }
                     map.fitBounds(routeLayer.getBounds(), { padding: [80, 80] });
+                }
+
+                if (message.type === 'clearRoute') {
+                    if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+                    if (destinationMarker) { map.removeLayer(destinationMarker); destinationMarker = null; }
+                }
+
+                if (message.type === 'panTo') {
+                    // 追従モード: 現在のズームを維持したまま中心だけ移動
+                    map.panTo([message.lat, message.lng], { animate: true });
                 }
 
                 if (message.type === 'updateUsers') {
