@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Adphone — デモ発表スライド</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --text:    #333333;
+  --sub:     #555555;
+  --muted:   #888888;
+  --line:    #cccccc;
+  --bg-card: #f5f5f5;
+  --accent:  #0056b3;
+  --red:     #d32f2f;
+  --green:   #196b24;
+  --orange:  #e97132;
+  --ph-bg:   #ececec;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  background: #b0b0b0;
+  font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+  overflow: hidden;
+  color: var(--text);
+}
+
+/* Stage */
+.stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+}
+.slide-wrapper {
+  aspect-ratio: 16/9;
+  width: min(100vw, 177.78vh);
+  height: min(56.25vw, 100vh);
+  position: relative;
+}
+.slide {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  display: none;
+  flex-direction: column;
+  padding: 4% 5.5%;
+}
+.slide.active { display: flex; }
+
+/* ── DCON-style header ─── */
+.sh {
+  flex-shrink: 0;
+  margin-bottom: 2.5%;
+}
+.sh-top {
+  display: flex;
+  align-items: baseline;
+  gap: 1.2%;
+  margin-bottom: 1%;
+}
+.sh-num {
+  font-size: 1.5vw;
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 2.5vw;
+}
+.sh-title {
+  font-size: 2.4vw;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+.sh-line {
+  height: 1.5px;
+  background: var(--line);
+}
+
+/* ── Layout ─── */
+.body { flex: 1; display: flex; gap: 4%; min-height: 0; }
+.col  { display: flex; flex-direction: column; gap: 3%; }
+.c5   { flex: 5; }
+.c6   { flex: 6; }
+.c55  { flex: 5.5; }
+.c4   { flex: 4; }
+
+/* ── Photo placeholder ─── */
+.ph {
+  flex: 1;
+  background: var(--ph-bg);
+  border: 2px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6%;
+  min-height: 0;
+}
+.ph-label {
+  font-size: 1.1vw;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.5;
+}
+.ph-note {
+  font-size: .85vw;
+  color: #aaa;
+  text-align: center;
+  line-height: 1.5;
+}
+.ph-icon-area {
+  width: 4vw;
+  height: 4vw;
+  border: 2px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--line);
+  font-size: 1.5vw;
+  font-weight: 700;
+}
+.ph-sm {
+  flex: none;
+  height: 35%;
+  background: var(--ph-bg);
+  border: 2px dashed var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4%;
+}
+
+/* ── Typography ─── */
+.label {
+  font-size: 1.25vw;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: .5%;
+  border-left: .28vw solid var(--accent);
+  padding-left: .6vw;
+}
+p { font-size: 1.4vw; color: var(--sub); line-height: 1.65; }
+ul { list-style: none; display: flex; flex-direction: column; gap: 2.5%; }
+li {
+  font-size: 1.35vw;
+  color: var(--sub);
+  padding-left: 1.4vw;
+  position: relative;
+  line-height: 1.55;
+}
+li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: .65em;
+  width: .4vw;
+  height: .4vw;
+  background: var(--text);
+  border-radius: 50%;
+}
+.hl  { color: var(--text); font-weight: 700; }
+.acc { color: var(--accent); font-weight: 700; }
+
+/* ── Divider ─── */
+.div { height: 1px; background: var(--line); flex-shrink: 0; }
+
+/* ── Cards ─── */
+.card {
+  background: var(--bg-card);
+  padding: 3% 4%;
+  display: flex;
+  flex-direction: column;
+  gap: 3%;
+  flex-shrink: 0;
+}
+.card-row {
+  background: var(--bg-card);
+  padding: 2.5% 3%;
+  display: flex;
+  align-items: center;
+  gap: 3%;
+}
+.card-label { font-size: 1.2vw; font-weight: 700; color: var(--text); }
+.card-body  { font-size: 1.05vw; color: var(--sub); line-height: 1.5; margin-top: .3em; }
+
+/* ── Badge strips ─── */
+.badge-strip {
+  display: flex;
+  gap: 2%;
+  flex-shrink: 0;
+  align-items: stretch;
+}
+.badge-item {
+  flex: 1;
+  padding: 3% 4%;
+  display: flex;
+  flex-direction: column;
+  gap: 5%;
+  border-left: .35vw solid;
+}
+.badge-item .bi-lv   { font-size: 1.3vw; font-weight: 700; }
+.badge-item .bi-cond { font-size: .95vw; color: var(--sub); line-height: 1.4; }
+.bi-official  { border-color: #2563eb; background: #f0f5ff; }
+.bi-verified  { border-color: #16a34a; background: #f0faf0; }
+.bi-partial   { border-color: #e97132; background: #fef6f0; }
+.bi-unverified{ border-color: #d32f2f; background: #fff5f5; }
+.bi-official   .bi-lv { color: #2563eb; }
+.bi-verified   .bi-lv { color: #16a34a; }
+.bi-partial    .bi-lv { color: #e97132; }
+.bi-unverified .bi-lv { color: #d32f2f; }
+
+/* ── Formula ─── */
+.formula {
+  background: #f0f5ff;
+  border-left: .35vw solid var(--accent);
+  padding: 3% 4%;
+  font-size: 1.4vw;
+  color: var(--text);
+  line-height: 1.9;
+  flex-shrink: 0;
+}
+.formula code {
+  font-family: 'Courier New', monospace;
+  background: #dce8ff;
+  padding: .05em .35em;
+  font-size: 1.2vw;
+}
+
+/* ── Weight table ─── */
+table { width: 100%; border-collapse: collapse; }
+th {
+  font-size: 1.1vw;
+  font-weight: 700;
+  text-align: left;
+  padding: 1.2% 2%;
+  border-bottom: 2px solid var(--text);
+  color: var(--text);
+}
+td {
+  font-size: 1.1vw;
+  padding: 1.5% 2%;
+  border-bottom: 1px solid var(--line);
+  color: var(--sub);
+  vertical-align: middle;
+}
+tr:last-child td { border-bottom: none; }
+
+/* ── Marker legend ─── */
+.leg { display: flex; flex-direction: column; gap: 2.5%; }
+.leg-row {
+  display: flex;
+  align-items: center;
+  gap: 3%;
+}
+.leg-dot {
+  width: 1.1vw;
+  height: 1.1vw;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.leg-text { font-size: 1.2vw; color: var(--sub); }
+.leg-sub  { font-size: .95vw; color: var(--muted); }
+
+/* ── Route steps ─── */
+.steps { display: flex; flex-direction: column; gap: 2.5%; }
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 3%;
+  background: var(--bg-card);
+  padding: 2.5% 3%;
+}
+.step-num {
+  background: var(--text);
+  color: #fff;
+  width: 2vw;
+  height: 2vw;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .9vw;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.step-text { font-size: 1.15vw; color: var(--sub); line-height: 1.5; }
+.step-sub  { font-size: .9vw; color: var(--muted); }
+
+/* ── Offline boxes ─── */
+.off-row { display: flex; gap: 3%; flex-shrink: 0; }
+.off-box {
+  flex: 1;
+  background: var(--bg-card);
+  padding: 3%;
+  text-align: center;
+}
+.off-box .ob-title { font-size: 1.2vw; font-weight: 700; color: var(--text); }
+.off-box .ob-body  { font-size: 1vw; color: var(--sub); line-height: 1.5; margin-top: .5em; }
+
+/* ── Summary grid ─── */
+.sum-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2.5%;
+  flex: 1;
+}
+.sum-box {
+  background: var(--bg-card);
+  padding: 4% 5%;
+  display: flex;
+  flex-direction: column;
+  gap: 4%;
+}
+.sum-box .sb-title { font-size: 1.3vw; font-weight: 700; color: var(--text); }
+.sum-box .sb-body  { font-size: 1.05vw; color: var(--sub); line-height: 1.5; }
+
+/* ── Title slide ─── */
+.title-slide {
+  justify-content: center;
+}
+.title-slide .app-name {
+  font-size: 7.5vw;
+  font-weight: 900;
+  color: var(--text);
+  letter-spacing: -.03em;
+  line-height: 1;
+}
+.title-slide .app-sub {
+  font-size: 1.7vw;
+  color: var(--sub);
+  margin-top: 1%;
+  font-weight: 400;
+}
+
+/* ── Highlight box ─── */
+.hi-box {
+  border-left: .35vw solid var(--text);
+  padding: 2% 3%;
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+.hi-box p { font-size: 1.35vw; color: var(--text); font-weight: 600; line-height: 1.5; }
+
+/* ── Nav ─── */
+.nav {
+  position: fixed;
+  bottom: 2%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 1.2vw;
+  background: rgba(30,30,30,.82);
+  backdrop-filter: blur(6px);
+  padding: .5% 2.5%;
+  border-radius: 999px;
+  z-index: 999;
+}
+.nav button {
+  background: rgba(255,255,255,.15);
+  border: none;
+  color: #fff;
+  font-size: 1.3vw;
+  width: 2.5vw;
+  height: 2.5vw;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s;
+}
+.nav button:hover { background: rgba(255,255,255,.28); }
+.nav .ctr { color: #fff; font-size: .95vw; min-width: 4vw; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="stage"><div class="slide-wrapper">
+
+<!-- ══════════════════════════════════
+     Slide 1  タイトル
+══════════════════════════════════ -->
+<div class="slide title-slide active" id="s1">
+  <div class="body" style="align-items:center; gap:5%;">
+
+    <!-- left -->
+    <div class="col c6" style="justify-content:center; gap:4%;">
+      <div class="app-name">Adphone</div>
+      <div class="app-sub">災害情報の信頼度を可視化するアプリ</div>
+      <div class="sh-line" style="margin-top:1%;"></div>
+      <ul style="margin-top:1%;">
+        <li>クラウドソーシング + 暗号署名で情報の信頼度を自動スコアリング</li>
+        <li>信頼度と連動したマップ上の災害可視化</li>
+        <li>A* による災害回避ルーティング、完全オフライン対応</li>
+      </ul>
+    </div>
+
+    <!-- right photo -->
+    <div class="col c5">
+      <div class="ph">
+        <div class="ph-icon-area">PHOTO</div>
+        <div class="ph-label">アプリ画面（フィード + マップ）</div>
+        <div class="ph-note">起動直後の2画面を横並びで</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════
+     Slide 2  課題
+══════════════════════════════════ -->
+<div class="slide" id="s2">
+  <div class="sh">
+    <div class="sh-top"><span class="sh-num">01</span><span class="sh-title">課題：SNSに真偽不明の情報が溢れる</span></div>
+    <div class="sh-line"></div>
+  </div>
+
+  <div class="body">
+
+    <!-- left -->
+    <div class="col c55" style="justify-content:space-between;">
+      <ul>
+        <li>大規模災害時、SNS には数分で<span class="hl">数万件の投稿</span>が殺到する</li>
+        <li>公式機関の発表と<span class="hl">デマ・未確認情報</span>が同じタイムラインに混在する</li>
+        <li>能登半島地震（2024）では誤情報で救助隊が<span class="hl">誤誘導</span>される事例が発生</li>
+      </ul>
+
+      <div class="div"></div>
+
+      <div class="hi-box">
+        <p>Adphone は、すべての情報に<span class="acc">信頼度スコア（0〜100%）</span>を自動付与し、<br>一目で信頼できる情報を判断できるようにする。</p>
+      </div>
+    </div>
+
+    <!-- right photo -->
+    <div class="col c4">
+      <div class="ph">
+        <div class="ph-icon-area">PHOTO</div>
+        <div class="ph-label">SNS上の災害情報の例</div>
+        <div class="ph-note">デマと公式情報が混在する<br>スクリーンショットまたはニュース画像</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════
+     Slide 3  フィード — 信頼度バッジ
+══════════════════════════════════ -->
+<div class="slide" id="s3">
+  <div class="sh">
+    <div class="sh-top"><span class="sh-num">02</span><span class="sh-title">フィード：全投稿に信頼度バッジを表示</span></div>
+    <div class="sh-line"></div>
+  </div>
+
+  <div class="body" style="flex-direction:column; gap:3%;">
+
+    <!-- 4 badges -->
+    <div class="badge-strip">
+      <div class="badge-item bi-official">
+        <div class="bi-lv">公式</div>
+        <div class="bi-cond">公式機関が署名<br>かつ ★★★</div>
+      </div>
+      <div class="badge-item bi-verified">
+        <div class="bi-lv">確認済</div>
+        <div class="bi-cond">★★★ または<br>（★★ + 公式）</div>
+      </div>
+      <div class="badge-item bi-partial">
+        <div class="bi-lv">一部確認</div>
+        <div class="bi-cond">★★<br>複数目撃あり</div>
+      </div>
+      <div class="badge-item bi-unverified">
+        <div class="bi-lv">未確認</div>
+        <div class="bi-cond">★<br>単独報告のみ</div>
+      </div>
+    </div>
+
+    <!-- photo -->
+    <div class="body" style="flex:1; gap:4%;">
+      <div class="ph">
+        <div class="ph-icon-area">PHOTO</div>
+        <div class="ph-label">フィード画面のスクリーンショット</div>
+        <div class="ph-note">気象庁（公式 92%）と一般ユーザー（未確認 35%）の<br>投稿が同時に見える状態</div>
+      </div>
+      <div class="col c4" style="justify-content:center; gap:3%;">
+        <div class="label">フィードで確認できる情報</div>
+        <ul>
+          <li>信頼度バッジ + パーセント表示</li>
+          <li>署名チェーン（誰がいつ確認したか）</li>
+          <li>投稿者の信頼スコア（0〜100pt）</li>
+          <li>同意 / 否定でスコアを更新</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════
+     Slide 4  スコアの仕組み
+══════════════════════════════════ -->
+<div class="slide" id="s4">
+  <div class="sh">
+    <div class="sh-top"><span class="sh-num">03</span><span class="sh-title">スコアリング：発行者の重み × 時間減衰</span></div>
+    <div class="sh-line"></div>
+  </div>
+
+  <div class="body">
+
+    <!-- left -->
+    <div class="col c55" style="gap:3%;">
+      <div class="formula">
+        score&nbsp;=&nbsp;Σ ( <code>decay(t)</code> &times; <code>issuerWeight</code> )<br>
+        <span style="font-size:1.1vw; color:var(--sub);">decay&thinsp;=&thinsp;e<sup style="font-size:.8vw;">−ln2/halfLife&thinsp;&times;&thinsp;elapsed</sup>&emsp;
+        昼間 半減期<strong> 1 時間</strong>　夜間 半減期<strong> 3 時間</strong></span>
+      </div>
+
+      <table>
+        <tr><th>発行者</th><th>重み（issuerWeight）</th></tr>
+        <tr><td>公式機関（気象庁・消防など）</td><td style="font-weight:700; color:var(--accent);">5.0 固定</td></tr>
+        <tr><td>一般ユーザー（信頼スコア 0〜100）</td><td>0.5 〜 2.0</td></tr>
+      </table>
+
+      <div class="div"></div>
+
+      <div class="label">ユーザー信頼スコアの変動</div>
+      <ul>
+        <li>同意（現地一致）: <span style="color:var(--green); font-weight:700;">+3pt</span>&emsp; 否定: <span style="color:var(--red); font-weight:700;">-5pt</span></li>
+        <li>初期値 50pt、範囲 0〜100pt</li>
+      </ul>
+    </div>
+
+    <!-- right photo -->
+    <div class="col c4" style="gap:3%;">
+      <div class="ph">
+        <div class="ph-icon-area">PHOTO</div>
+        <div class="ph-label">署名チェーン 展開画面</div>
+        <div class="ph-note">気象庁・渋谷消防署・地域防災士の<br>署名が並んでいる状態</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════
+     Slide 5  マップ
+══════════════════════════════════ -->
+<div class="slide" id="s5">
+  <div class="sh">
+    <div class="sh-top"><span class="sh-num">04</span><span class="sh-title">マップ：信頼度と連動した災害の可視化</span></div>
+    <div class="sh-line"></div>
+  </div>
+
+  <div class="body">
+
+    <!-- large photo -->
+    <div class="col c6">
+      <div class="ph">
+        <div class="ph-icon-area">PHOTO</div>
+        <div class="ph-label">マップ画面のスクリーンショット</div>
+        <div class="ph-note">渋谷周辺の洪水・火災・道路閉塞マーカーが<br>色分けされて表示された状態</div>
+      </div>
+    </div>
+
+    <!-- right legend -->
+    <div class="col c4" style="justify-content:center; gap:4%;">
+      <div class="label">マーカーの色 = 災害カテゴリ</div>
+      <div class="leg">
+        <div class="leg-row">
+          <div class="leg-dot" style="background:#1D4ED8;"></div>
+          <div>
+            <div class="leg-text"><strong>青 — 浸水 / 洪水</strong></div>
+          </div>
+        </div>
+        <div class="leg-row">
+          <div class="leg-dot" style="background:#DC2626;"></div>
+          <div>
+            <div class="leg-text"><strong>赤 — 火災</strong></div>
+          </div>
+        </div>
+        <div class="leg-row">
+          <div class="leg-dot" style="background:#7C3AED;"></div>
+          <div>
+            <div class="leg-text"><strong>紫 — 建物倒壊</strong></div>
+          </div>
+        </div>
+        <div class="leg-row">
+          <div class="leg-dot" style="background:#64748B;"></div>
+          <div>
+            <div class="leg-text"><strong>グレー — 道路閉塞</strong></div>
+          </div>
+        </div>
+        <div class="leg-row">
+          <div class="leg-dot" style="background:#92400E;"></div>
+          <div>
+            <div class="leg-text"><strong>茶 — 土砂崩れ</strong></div>
+          </div>
+        </div>
+        <div class="leg-row">
+          <div class="leg-dot" style="background:#F97316;"></div>
+          <div>
+            <div class="leg-text"><strong>橙 — 負傷者</strong></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="div"></div>
+      <ul>
+        <li>信頼度はポップアップ内の星（★★★）と公式バッジで表示</li>
+        <li>避難所 200 件以上を地図上に表示</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════
+     Slide 6  ルーティング
+══════════════════════════════════ -->
+<div class="slide" id="s6">
+  <div class="sh">
+    <div class="sh-top"><span class="sh-num">05</span><span class="sh-title">ルーティング：A* で危険ゾーンを自動回避</span></div>
+    <div class="sh-line"></div>
+  </div>
+
+  <div class="body">
+
+    <!-- left steps -->
+    <div class="col c55" style="gap:3%;">
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div>
+            <div class="step-text"><strong>Pass 1 — 安全迂回</strong></div>
+            <div class="step-sub">危険ゾーン内のエッジを完全除去してA*を実行。<br>各マーカー周囲 100m（最小 50m / 最大 200m）＋ マージン 30m をブロック</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div>
+            <div class="step-text"><strong>Pass 2 — 避難所カスケード</strong></div>
+            <div class="step-sub">目的地に到達できない場合、最大 8 候補の避難所に順次 A* を試行</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div>
+            <div class="step-text"><strong>Pass 3 — ペナルティ付き</strong></div>
+            <div class="step-sub">グラフが非連結でも必ず経路を返す。危険エッジのコストを 50 倍に設定</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="div"></div>
+      <ul>
+        <li>道路データ：OSM 20 万件超（徒歩 / 車モードを切替）</li>
+        <li>始点・終点を最近傍の道路交差点にスナップ</li>
+      </ul>
+    </div>
+
+    <!-- right photo -->
+    <div class="col c4">
+      <div class="ph">
+        <div class="ph-icon-area">PHOTO</div>
+        <div class="ph-label">ルーティング結果のスクリーンショット</div>
+        <div class="ph-note">「迂回中」バッジと距離表示（例 2.3 km）<br>が表示されている状態</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════
+     Slide 7  オフライン
+══════════════════════════════════ -->
+<div class="slide" id="s7">
+  <div class="sh">
+    <div class="sh-top"><span class="sh-num">06</span><span class="sh-title">オフライン対応：通信が途絶えても動作する</span></div>
+    <div class="sh-line"></div>
+  </div>
+
+  <div class="body">
+
+    <!-- left -->
+    <div class="col c55" style="gap:3%;">
+      <div class="hi-box">
+        <p>大規模災害時、携帯基地局は<span class="hl">数時間〜数日間停波</span>する。<br>Adphone は通信なしですべての機能が動作する。</p>
+      </div>
+
+      <div class="off-row">
+        <div class="off-box">
+          <div class="ob-title">地図タイル</div>
+          <div class="ob-body">IndexedDB にズーム 11〜16 を事前キャッシュ。<br>GPS 移動で自動補充</div>
+        </div>
+        <div class="off-box">
+          <div class="ob-title">道路 / 避難所</div>
+          <div class="ob-body">端末内アセットに 20 万件の<br>道路データを内包</div>
+        </div>
+        <div class="off-box">
+          <div class="ob-title">投票データ</div>
+          <div class="ob-body">SQLite に記録し<br>通信回復時に Firestore へ同期</div>
+        </div>
+      </div>
+
+      <div class="div"></div>
+      <ul>
+        <li>BLE / LoRa メッシュ経由でデバイス間の情報中継が可能</li>
+        <li>Gemma（オンデバイス AI）で端末内推論、クラウド不要</li>
+      </ul>
+    </div>
+
+    <!-- right photo -->
+    <div class="col c4">
+      <div class="ph">
+        <div class="ph-icon-area">PHOTO</div>
+        <div class="ph-label">オフラインモード時の画面</div>
+        <div class="ph-note">機内モード状態でマップと<br>ルートが表示されている状態</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════
+     Slide 8  まとめ
+══════════════════════════════════ -->
+<div class="slide" id="s8">
+  <div class="sh">
+    <div class="sh-top"><span class="sh-num">07</span><span class="sh-title">まとめ</span></div>
+    <div class="sh-line"></div>
+  </div>
+
+  <div class="body" style="flex-direction:column; gap:3%;">
+
+    <div class="sum-grid">
+      <div class="sum-box">
+        <div class="sb-title">信頼度の多段階可視化</div>
+        <div class="sb-body">バッジ 4 段階 + パーセント表示 + 星評価。誰でも一瞬で情報の質を判断できる。</div>
+      </div>
+      <div class="sum-box">
+        <div class="sb-title">署名チェーンの透明性</div>
+        <div class="sb-body">誰がいつ確認したか全員分を展開表示。Ed25519 署名でなりすまし防止。</div>
+      </div>
+      <div class="sum-box">
+        <div class="sb-title">時間減衰スコアリング</div>
+        <div class="sb-body">指数減衰（昼 1h / 夜 3h 半減期）で古い情報を自動押し下げ。常に最新情報が上位。</div>
+      </div>
+      <div class="sum-box">
+        <div class="sb-title">災害回避ルーティング</div>
+        <div class="sb-body">A* ＋ 危険ゾーン自動検出（50〜200m）で 3 段階フォールバック付き安全経路を計算。</div>
+      </div>
+      <div class="sum-box">
+        <div class="sb-title">完全オフライン動作</div>
+        <div class="sb-body">BLE/LoRa + SQLite + タイルキャッシュ。通信断絶状態でも地図・情報・経路が機能。</div>
+      </div>
+      <div class="sum-box">
+        <div class="sb-title">オンデバイス AI</div>
+        <div class="sb-body">Gemma 3n（int4 量子化）を端末内で推論。テキスト・画像の解析がクラウドなしで動作。</div>
+      </div>
+    </div>
+
+    <div class="div"></div>
+
+    <div style="text-align:center; padding:1% 0;">
+      <div style="font-size:2vw; font-weight:700; color:var(--text);">クラウドソーシング &times; 暗号署名 &times; 機械的スコアリング</div>
+      <div style="font-size:1.3vw; color:var(--sub); margin-top:.5%;">混乱する災害現場でも、信頼できる情報を届ける</div>
+    </div>
+
+  </div>
+</div>
+
+
+</div></div><!-- /slide-wrapper /stage -->
+
+<div class="nav">
+  <button onclick="go(-1)">&#8592;</button>
+  <span class="ctr" id="ctr">1 / 8</span>
+  <button onclick="go(1)">&#8594;</button>
+</div>
+
+<script>
+  var cur = 1, total = 8;
+  function show(n) {
+    document.querySelectorAll('.slide').forEach(function(s){ s.classList.remove('active'); });
+    document.getElementById('s' + n).classList.add('active');
+    document.getElementById('ctr').textContent = n + ' / ' + total;
+    cur = n;
+  }
+  function go(d) {
+    var n = cur + d;
+    if (n >= 1 && n <= total) show(n);
+  }
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') go(1);
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')  go(-1);
+  });
+</script>
+</body>
+</html>
