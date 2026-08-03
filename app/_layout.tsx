@@ -23,7 +23,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { initTrustSystem } from "@/lib/userTrust";
 import GemmaModule from "@/lib/gemma";
 
-const GEMMA_MODEL_PATH = "/sdcard/gemma-3n-E4B-it-int4.litertlm";
+const GEMMA_MODEL_PATH = "/sdcard/gemma-3n-E2B-it-int4.litertlm";
 
 async function requestPermissions() {
   if (Platform.OS === "android") {

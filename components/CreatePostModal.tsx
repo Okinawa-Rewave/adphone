@@ -37,7 +37,7 @@ import { useDisasterReport } from "@/contexts/DisasterReportContext";
 import { useUI } from "@/contexts/UIContext";
 import GemmaModule from "@/lib/gemma";
 
-const GEMMA_MODEL_PATH = "/sdcard/gemma-3n-E4B-it-int4.litertlm";
+const GEMMA_MODEL_PATH = "/sdcard/gemma-3n-E2B-it-int4.litertlm";
 
 const DISASTER_OPTIONS: { type: DisasterType; label: string; Icon: any; color: string }[] = [
   { type: "earthquake", label: "地震",     Icon: AlertTriangle, color: Design.colors.disasterEarthquake },
@@ -95,9 +95,9 @@ export function CreatePostModal({ visible, onClose }: Props) {
   const fetchGps = async () => {
     setGpsLoading(true);
     try {
-      const coords = { lat: 35.6591, lon: 139.7038 };
+      const coords = { lat: 26.5267, lon: 128.0303 };
       setGpsCoords(coords);
-      setLocation((prev) => prev.trim() ? prev : "渋谷ヒカリエホール");
+      setLocation((prev) => prev.trim() ? prev : "沖縄高専");
     } finally {
       setGpsLoading(false);
     }
