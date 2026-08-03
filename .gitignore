@@ -82,6 +82,8 @@ yarn-error.*
 
 GemmaVlmApp/
 
-.pptx
-
 .claude/
+
+# 発表資料の生成物（生成元の make_*.py は追跡する）
+*.pptx
+slides.html
