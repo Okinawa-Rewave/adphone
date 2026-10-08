@@ -3,7 +3,7 @@
  *
  * RegionalChatView と同じレイアウト構成（KeyboardAvoidingView + FlatList + 入力エリア）。
  * メッセージ表示は既存の RegionalChatBubble を再利用。
- * 送受信は BLE sendText() 経由。
+ * 送受信は BLE sendText() 経由。自分のメッセージの下に配送状態（Pi が返す）を表示する。
  */
 
 import React, { useEffect, useState } from "react";
@@ -20,6 +20,7 @@ import {
 import { Radio, Send, WifiOff } from "lucide-react-native";
 import { Design } from "@/constants/Design";
 import { RegionalChatBubble, type RegionalMessage } from "@/components/RegionalChatBubble";
+import { DeliveryStatusLabel } from "@/components/DeliveryStatusLabel";
 import { useBleContext } from "@/contexts/BleContext";
 import { useLpwaChat } from "@/contexts/LpwaChatContext";
 import { encodeChatMessage, makeChatId, type LpwaChatMessage } from "@/lib/chatPayload";
@@ -44,7 +45,7 @@ function toRegionalMessage(m: LpwaChatMessage): RegionalMessage {
 }
 
 export function LpwaChatView() {
-  const { bleState, connectedCount, sendText } = useBleContext();
+  const { bleState, connectedCount, sendText, deliveryStatus } = useBleContext();
   const { messages, myIdShort, addMessage } = useLpwaChat();
   const [input, setInput] = useState("");
   const [profile, setProfile] = useState<Profile>({ nickname: "匿名", icon: "🙂" });
@@ -87,7 +88,7 @@ export function LpwaChatView() {
 
     setInput("");
     addMessage(msg);                          // 自分のフィードに即時追加
-    await sendText(encodeChatMessage(msg));    // BLE 送信
+    await sendText(encodeChatMessage(msg), { key: msg.id });   // BLE 送信（配送状態は msg.id で引く）
   };
 
   return (
@@ -117,9 +118,15 @@ export function LpwaChatView() {
         inverted
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <RegionalChatBubble message={toRegionalMessage(item)} myUid={myIdShort} />
-        )}
+        renderItem={({ item }) => {
+          const status = item.senderIdShort === myIdShort ? deliveryStatus[item.id] : undefined;
+          return (
+            <View>
+              <RegionalChatBubble message={toRegionalMessage(item)} myUid={myIdShort} />
+              {status && <DeliveryStatusLabel info={status} />}
+            </View>
+          );
+        }}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyText}>

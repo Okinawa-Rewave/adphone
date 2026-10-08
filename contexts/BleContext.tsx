@@ -6,17 +6,33 @@
  */
 
 import React, { createContext, useContext } from "react";
-import { useBle, BleDevice, BleState } from "@/lib/ble2";
+import {
+  useBle,
+  type BleDevice,
+  type BleState,
+  type DeliveryInfo,
+  type MeshNode,
+  type PiInfo,
+  type SendOptions,
+} from "@/lib/ble2";
 
 type BleContextValue = {
   bleState: BleState;
   receivedMessages: string[];
   connectedCount: number;
   discoveredDevices: BleDevice[];
+  /** 送ったメッセージの配送状態（sendText が返したキー → 状態） */
+  deliveryStatus: Record<string, DeliveryInfo>;
+  /** つないでいる Pi の情報（未接続なら null） */
+  piInfo: PiInfo | null;
+  /** メッシュのノード一覧（requestNodes で更新） */
+  nodes: MeshNode[];
   startScan: () => Promise<void>;
   connectToDevice: (deviceId: string) => Promise<void>;
   disconnect: () => Promise<void>;
-  sendText: (text: string) => Promise<void>;
+  /** 送る。戻り値は deliveryStatus を引くキー（未接続なら null） */
+  sendText: (text: string, opts?: SendOptions) => Promise<string | null>;
+  requestNodes: () => Promise<void>;
 };
 
 const BleContext = createContext<BleContextValue | null>(null);
