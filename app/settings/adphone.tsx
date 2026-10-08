@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { DeliveryStatusLabel } from "@/components/DeliveryStatusLabel";
 import { ScreenLayout } from "@/components/ScreenLayout";
 import { Design } from "@/constants/Design";
 import { BleDevice, BleState } from "@/lib/ble2";
@@ -82,10 +83,16 @@ export default function AdphoneSettingsScreen() {
     connectToDevice,
     disconnect,
     sendText,
+    deliveryStatus,
+    piInfo,
+    nodes,
+    requestNodes,
   } = useBleContext();
 
   const [inputText, setInputText] = useState("");
   const [destText, setDestText] = useState("");
+  const [destError, setDestError] = useState<string | null>(null);
+  const [lastKey, setLastKey] = useState<string | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
 
   const isConnected = bleState === "connected";
@@ -105,13 +112,21 @@ export default function AdphoneSettingsScreen() {
     const text = inputText.trim();
     if (!text) return;
     const dest = destText.trim();
-    const payload = dest ? `--target ${dest} ${text}` : text;
-    await sendText(payload);
+    let to: number | undefined;
+    if (dest) {
+      to = Number(dest);
+      if (!/^\d+$/.test(dest) || to > 65534) {
+        setDestError("送信先は 0〜65534 の半角数字で入力してください");
+        return;
+      }
+    }
+    setDestError(null);
+    setLastKey(await sendText(text, { to }));
     setInputText("");
   };
 
   return (
-    <ScreenLayout title="アドフォン連携" subtitle="BLE テスト" showBack>
+    <ScreenLayout title="ADREN 連携" subtitle="BLE テスト" showBack>
       {/* ── 接続状態 & 台数 ─────────────────────────────────────────────────── */}
       <View style={styles.statusRow}>
         <View style={styles.statusLeft}>
@@ -169,7 +184,7 @@ export default function AdphoneSettingsScreen() {
           {discoveredDevices.length === 0 ? (
             <View style={styles.emptyDevice}>
               <ActivityIndicator size="small" color={Design.colors.textMuted} />
-              <Text style={styles.emptyDeviceText}>Adphone を検索中…</Text>
+              <Text style={styles.emptyDeviceText}>中継局（Adphone）を検索中…</Text>
             </View>
           ) : (
             discoveredDevices.map((device: BleDevice) => (
@@ -187,6 +202,13 @@ export default function AdphoneSettingsScreen() {
       {/* ── 接続済みUI（送受信） ─────────────────────────────────────────────── */}
       {isConnected && (
         <>
+          {piInfo && (
+            <Text style={styles.piInfo}>
+              {`中継局 ${piInfo.addr}${piInfo.name ? `（${piInfo.name}）` : ""} — 経路: ${
+                piInfo.routing ?? "?"
+              } / グループ鍵: ${piInfo.group ? "あり" : "なし"}`}
+            </Text>
+          )}
           <TextInput
             style={[styles.input, styles.destInput]}
             value={destText}
@@ -214,6 +236,24 @@ export default function AdphoneSettingsScreen() {
               <Text style={styles.buttonText}>送信</Text>
             </TouchableOpacity>
           </View>
+          {destError && <Text style={styles.errorText}>{destError}</Text>}
+          {lastKey && deliveryStatus[lastKey] && (
+            <DeliveryStatusLabel info={deliveryStatus[lastKey]} align="left" />
+          )}
+
+          <View style={styles.nodesHeader}>
+            <Text style={styles.logTitle}>メッシュのノード（{nodes.length}）</Text>
+            <TouchableOpacity onPress={requestNodes} activeOpacity={0.7}>
+              <Text style={styles.linkText}>更新</Text>
+            </TouchableOpacity>
+          </View>
+          {nodes.map((n) => (
+            <Text key={n.addr} style={styles.nodeText}>
+              {`${n.addr}  ${n.name || "（名前なし）"}  ${n.role}  ${
+                n.hops != null ? `${n.hops} ホップ` : ""
+              }`}
+            </Text>
+          ))}
 
           <Text style={styles.logTitle}>受信ログ（Pi→App）</Text>
           <FlatList
@@ -238,6 +278,31 @@ export default function AdphoneSettingsScreen() {
 
 // ─── スタイル ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  piInfo: {
+    fontSize: Design.fontSize.caption,
+    color: Design.colors.textMuted,
+    marginBottom: Design.spacing.sm,
+  },
+  errorText: {
+    fontSize: Design.fontSize.caption,
+    color: Design.colors.danger,
+    marginTop: 4,
+  },
+  nodesHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  linkText: {
+    fontSize: Design.fontSize.body,
+    color: Design.colors.primary,
+    paddingVertical: Design.spacing.sm,
+  },
+  nodeText: {
+    fontSize: Design.fontSize.caption,
+    color: Design.colors.text,
+    paddingVertical: 2,
+  },
   statusRow: {
     flexDirection: "row",
     justifyContent: "space-between",
